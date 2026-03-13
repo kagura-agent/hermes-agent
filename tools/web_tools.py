@@ -4,7 +4,8 @@ Standalone Web Tools Module
 
 This module provides generic web tools that work with multiple backend providers.
 Backend is selected during ``hermes tools`` setup (web.backend in config.yaml).
-Firecrawl can run directly or via a Nous-hosted tool-gateway fallback.
+When available, Hermes can route Firecrawl calls through a Nous-hosted tool-gateway
+for Nous Subscribers only.
 
 Available tools:
 - web_search_tool: Search the web for information
@@ -12,7 +13,7 @@ Available tools:
 - web_crawl_tool: Crawl websites with specific instructions
 
 Backend compatibility:
-- Firecrawl: https://docs.firecrawl.dev/introduction (search, extract, crawl; direct, legacy TOOL_GATEWAY_URL, or derived firecrawl-gateway.<domain>)
+- Firecrawl: https://docs.firecrawl.dev/introduction (search, extract, crawl; direct, legacy TOOL_GATEWAY_URL, or derived firecrawl-gateway.<domain> for Nous Subscribers)
 - Parallel: https://docs.parallel.ai (search, extract)
 - Tavily: https://tavily.com (search, extract, crawl)
 
@@ -171,7 +172,7 @@ def _get_firecrawl_gateway_url() -> str:
 
 
 def _read_nous_access_token() -> Optional[str]:
-    """Read Nous OAuth access token from auth store (or explicit env override)."""
+    """Read a Nous Subscriber OAuth access token from auth store or env override."""
     explicit = os.getenv("TOOL_GATEWAY_USER_TOKEN")
     if isinstance(explicit, str) and explicit.strip():
         return explicit.strip()
@@ -196,7 +197,7 @@ def _read_nous_access_token() -> Optional[str]:
 
 
 def _is_tool_gateway_ready() -> bool:
-    """Return True when gateway URL and user auth token are available."""
+    """Return True when gateway URL and a Nous Subscriber token are available."""
     return bool(_get_firecrawl_gateway_url()) and bool(_read_nous_access_token())
 
 
@@ -210,7 +211,8 @@ def _raise_web_backend_configuration_error() -> None:
     raise ValueError(
         "Web tools are not configured. "
         "Set FIRECRAWL_API_KEY for cloud Firecrawl, set FIRECRAWL_API_URL for a self-hosted Firecrawl instance, "
-        "or login to Nous (`hermes model`) and provide FIRECRAWL_GATEWAY_URL, TOOL_GATEWAY_DOMAIN, or TOOL_GATEWAY_URL."
+        "or, if you are a Nous Subscriber, login to Nous (`hermes model`) and provide "
+        "FIRECRAWL_GATEWAY_URL, TOOL_GATEWAY_DOMAIN, or TOOL_GATEWAY_URL."
     )
 
 
@@ -218,7 +220,7 @@ def _get_firecrawl_client():
     """Get or create Firecrawl client.
 
     Direct Firecrawl takes precedence when explicitly configured. Otherwise
-    Hermes falls back to the Firecrawl tool-gateway for logged-in Nous users.
+    Hermes falls back to the Firecrawl tool-gateway for logged-in Nous Subscribers.
     """
     global _firecrawl_client, _firecrawl_client_config
 
@@ -1409,7 +1411,8 @@ async def web_crawl_tool(
         if not check_firecrawl_api_key():
             return json.dumps({
                 "error": "web_crawl requires Firecrawl. Set FIRECRAWL_API_KEY, FIRECRAWL_API_URL, "
-                         "or login to Nous and use FIRECRAWL_GATEWAY_URL, TOOL_GATEWAY_DOMAIN, or TOOL_GATEWAY_URL, "
+                         "or, if you are a Nous Subscriber, login to Nous and use FIRECRAWL_GATEWAY_URL, "
+                         "TOOL_GATEWAY_DOMAIN, or TOOL_GATEWAY_URL, "
                          "or use web_search + web_extract instead.",
                 "success": False,
             }, ensure_ascii=False)
@@ -1684,7 +1687,8 @@ def check_firecrawl_api_key() -> bool:
 
     Availability is true when either:
     1) direct Firecrawl config (`FIRECRAWL_API_KEY` or `FIRECRAWL_API_URL`), or
-    2) Firecrawl gateway origin + Nous access token (fallback when direct Firecrawl is not configured).
+    2) Firecrawl gateway origin + Nous Subscriber access token
+       (fallback when direct Firecrawl is not configured).
 
     Returns:
         bool: True if direct Firecrawl or the tool-gateway can be used.
@@ -1743,7 +1747,11 @@ if __name__ == "__main__":
                 print("   Firecrawl backend selected but not configured")
     else:
         print("❌ No web search backend configured")
-        print("Set PARALLEL_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY, FIRECRAWL_API_URL, or login to Nous and use FIRECRAWL_GATEWAY_URL, TOOL_GATEWAY_DOMAIN, or TOOL_GATEWAY_URL")
+        print(
+            "Set PARALLEL_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY, FIRECRAWL_API_URL, "
+            "or, if you are a Nous Subscriber, login to Nous and use "
+            "FIRECRAWL_GATEWAY_URL, TOOL_GATEWAY_DOMAIN, or TOOL_GATEWAY_URL"
+        )
 
     if not nous_available:
         print("❌ No auxiliary model available for LLM content processing")

@@ -583,7 +583,7 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "TOOL_GATEWAY_URL": {
-        "description": "Legacy shared tool-gateway base URL for Firecrawl proxying (optional)",
+        "description": "Legacy shared tool-gateway base URL for Firecrawl proxying for Nous Subscribers only (optional)",
         "prompt": "Tool-gateway URL (leave empty to use vendor gateway defaults)",
         "url": None,
         "password": False,
@@ -591,7 +591,7 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "FIRECRAWL_GATEWAY_URL": {
-        "description": "Exact Firecrawl tool-gateway origin override (optional)",
+        "description": "Exact Firecrawl tool-gateway origin override for Nous Subscribers only (optional)",
         "prompt": "Firecrawl gateway URL (leave empty to derive from domain)",
         "url": None,
         "password": False,
@@ -599,7 +599,7 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "TOOL_GATEWAY_DOMAIN": {
-        "description": "Shared tool-gateway domain suffix used to derive vendor hosts, e.g. rewbs.uk -> firecrawl-gateway.rewbs.uk",
+        "description": "Shared tool-gateway domain suffix for Nous Subscribers only, used to derive vendor hosts, e.g. nousresearch.com -> firecrawl-gateway.nousresearch.com",
         "prompt": "Tool-gateway domain suffix",
         "url": None,
         "password": False,
@@ -607,7 +607,7 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "TOOL_GATEWAY_SCHEME": {
-        "description": "Shared tool-gateway URL scheme used to derive vendor hosts (`https` by default, set `http` for local gateway testing)",
+        "description": "Shared tool-gateway URL scheme for Nous Subscribers only, used to derive vendor hosts (`https` by default, set `http` for local gateway testing)",
         "prompt": "Tool-gateway URL scheme",
         "url": None,
         "password": False,
@@ -615,7 +615,7 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "TOOL_GATEWAY_USER_TOKEN": {
-        "description": "Explicit Nous access token for tool-gateway requests (optional; otherwise read from the Hermes auth store)",
+        "description": "Explicit Nous Subscriber access token for tool-gateway requests (optional; otherwise read from the Hermes auth store)",
         "prompt": "Tool-gateway user token",
         "url": None,
         "password": True,
