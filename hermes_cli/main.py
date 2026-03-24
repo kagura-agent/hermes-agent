@@ -2759,8 +2759,18 @@ def cmd_update(args):
                     cwd=PROJECT_ROOT, check=True, env=uv_env,
                 )
         else:
-            venv_pip = PROJECT_ROOT / "venv" / ("Scripts" if sys.platform == "win32" else "bin") / "pip"
-            pip_cmd = [str(venv_pip)] if venv_pip.exists() else ["pip"]
+            venv_bin = PROJECT_ROOT / "venv" / ("Scripts" if sys.platform == "win32" else "bin")
+            venv_pip = venv_bin / "pip"
+            venv_python = venv_bin / ("python.exe" if sys.platform == "win32" else "python")
+            if venv_pip.exists():
+                pip_cmd = [str(venv_pip)]
+            elif venv_python.exists():
+                pip_cmd = [str(venv_python), "-m", "pip"]
+            else:
+                print("  ✗ No virtual environment found at: venv/")
+                print("  Re-run the install script to set up the venv:")
+                print("    curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash")
+                sys.exit(1)
             try:
                 subprocess.run(pip_cmd + ["install", "-e", ".[all]", "--quiet"], cwd=PROJECT_ROOT, check=True)
             except subprocess.CalledProcessError:
