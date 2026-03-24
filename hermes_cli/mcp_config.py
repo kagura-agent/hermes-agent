@@ -12,7 +12,6 @@ import asyncio
 import getpass
 import logging
 import os
-import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -501,10 +500,9 @@ def cmd_mcp_test(args):
 
 
 def _interpolate_value(value: str) -> str:
-    """Resolve ``${ENV_VAR}`` references in a string."""
-    def _replace(m):
-        return os.getenv(m.group(1), "")
-    return re.sub(r"\$\{(\w+)\}", _replace, value)
+    """Resolve ``${ENV_VAR}`` references in a string for display."""
+    from tools.mcp_tool import _ENV_VAR_PATTERN
+    return _ENV_VAR_PATTERN.sub(lambda m: os.getenv(m.group(1), ""), value)
 
 
 # ─── hermes mcp configure ────────────────────────────────────────────────────
