@@ -258,6 +258,60 @@ def _build_job_prompt(job: dict) -> str:
     return "\n".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Cron execution log — write a one-liner to memories/ so the conversational
+# agent is aware of past scheduled task runs.
+# ---------------------------------------------------------------------------
+
+_CRON_LOG_MAX_LINES = 100  # Keep the log compact; prune oldest entries
+
+
+def _log_cron_execution(job: dict, success: bool, error: Optional[str] = None) -> None:
+    """Append a one-line execution record to ``memories/cron_log.md``.
+
+    The conversational agent can reference this file to answer questions
+    like "did you run the briefing today?" without needing full cron
+    context loaded during the job itself.
+    """
+    try:
+        memories_dir = _hermes_home / "memories"
+        memories_dir.mkdir(parents=True, exist_ok=True)
+        log_path = memories_dir / "cron_log.md"
+
+        timestamp = _hermes_now().strftime("%Y-%m-%d %H:%M:%S")
+        job_name = job.get("name", job.get("id", "unknown"))
+        status = "✅" if success else "❌"
+        line = f"- [{timestamp}] {status} **{job_name}**"
+        if error:
+            # Truncate long errors to keep the log readable
+            short_error = error[:120].replace("\n", " ")
+            line += f" — {short_error}"
+
+        # Append to log, creating header if needed
+        if log_path.exists():
+            existing = log_path.read_text(encoding="utf-8")
+        else:
+            existing = "# Cron Execution Log\n\nRecent scheduled task runs (auto-generated, newest last):\n"
+
+        lines = existing.rstrip().split("\n")
+        lines.append(line)
+
+        # Prune oldest entries (keep header + last N entries)
+        header_end = 0
+        for i, l in enumerate(lines):
+            if l.startswith("- ["):
+                header_end = i
+                break
+        entry_lines = [l for l in lines[header_end:] if l.startswith("- [")]
+        if len(entry_lines) > _CRON_LOG_MAX_LINES:
+            entry_lines = entry_lines[-_CRON_LOG_MAX_LINES:]
+        pruned = lines[:header_end] + entry_lines
+
+        log_path.write_text("\n".join(pruned) + "\n", encoding="utf-8")
+    except Exception as e:
+        logger.debug("Failed to write cron execution log: %s", e)
+
+
 def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
     """
     Execute a single cron job.
@@ -546,6 +600,7 @@ def tick(verbose: bool = True) -> int:
                         logger.error("Delivery failed for job %s: %s", job["id"], de)
 
                 mark_job_run(job["id"], success, error)
+                _log_cron_execution(job, success, error)
                 executed += 1
 
             except Exception as e:
