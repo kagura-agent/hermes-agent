@@ -321,8 +321,21 @@ def _transcribe_local(file_path: str, model_name: str) -> Dict[str, Any]:
         from faster_whisper import WhisperModel
         # Lazy-load the model (downloads on first use, ~150 MB for 'base')
         if _local_model is None or _local_model_name != model_name:
+            stt_config = _load_stt_config()
+            device = stt_config.get("device", "auto")
+            compute_type = "auto" if device != "cpu" else "int8"
+
             logger.info("Loading faster-whisper model '%s' (first load downloads the model)...", model_name)
-            _local_model = WhisperModel(model_name, device="auto", compute_type="auto")
+            try:
+                _local_model = WhisperModel(model_name, device=device, compute_type=compute_type)
+            except RuntimeError as exc:
+                if device == "cpu":
+                    raise  # already on CPU, nothing to fall back to
+                logger.warning(
+                    "Failed to load STT model with device=%s: %s — falling back to CPU",
+                    device, exc,
+                )
+                _local_model = WhisperModel(model_name, device="cpu", compute_type="int8")
             _local_model_name = model_name
 
         # Language: config.yaml (stt.local.language) > env var > auto-detect.

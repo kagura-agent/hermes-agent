@@ -690,6 +690,7 @@ platform_toolsets:
 stt:
   enabled: true
   # provider: "local"          # auto-detected if omitted
+  device: "auto"              # "auto" (try GPU, fall back to CPU) | "cpu" | "cuda"
   local:
     model: "base"              # tiny | base | small | medium | large-v3 | turbo
     # language: ""             # auto-detect; set to "en", "es", "fr", etc. to force

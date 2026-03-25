@@ -483,6 +483,9 @@ DEFAULT_CONFIG = {
     "stt": {
         "enabled": True,
         "provider": "local",  # "local" (free, faster-whisper) | "groq" | "openai" (Whisper API) | "mistral" (Voxtral Transcribe)
+        "device": "auto",     # "auto" | "cpu" | "cuda" — device for local faster-whisper
+        "device": "auto",     # "auto" | "cpu" | "cuda" — device for local faster-whisper
+>>>>>>> 1a414d3c (fix: graceful CUDA fallback for local STT (fixes #2885))
         "local": {
             "model": "base",  # tiny, base, small, medium, large-v3
             "language": "",  # auto-detect by default; set to "en", "es", "fr", etc. to force
