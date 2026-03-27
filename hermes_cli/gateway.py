@@ -434,6 +434,11 @@ def generate_systemd_unit(system: bool = False, run_as_user: str | None = None) 
         resolved_node_dir = str(Path(resolved_node).resolve().parent)
         if resolved_node_dir not in path_entries:
             path_entries.append(resolved_node_dir)
+    # Include ~/.local/bin so tools installed via `uv` / `pipx` (e.g. uvx)
+    # are discoverable by MCP servers started from the systemd unit.
+    local_bin = str(Path.home() / ".local" / "bin")
+    if local_bin not in path_entries:
+        path_entries.append(local_bin)
     path_entries.extend(["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"])
     sane_path = ":".join(path_entries)
 
