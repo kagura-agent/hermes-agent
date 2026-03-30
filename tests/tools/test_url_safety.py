@@ -1,5 +1,6 @@
 """Tests for SSRF protection in url_safety module."""
 
+import os
 import socket
 from unittest.mock import patch
 
@@ -174,3 +175,65 @@ class TestIsBlockedIp:
     def test_allowed_ips(self, ip_str):
         ip = ipaddress.ip_address(ip_str)
         assert _is_blocked_ip(ip) is False, f"{ip_str} should be allowed"
+
+
+class TestRFC2544Allowlist:
+    """Tests for RFC 2544 benchmark range (198.18.0.0/15) allowlist."""
+
+    def test_rfc2544_blocked_by_default(self):
+        """198.18.x.x is blocked when HERMES_ALLOW_RFC2544 is not set."""
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("HERMES_ALLOW_RFC2544", None)
+            ip = ipaddress.ip_address("198.18.0.1")
+            assert _is_blocked_ip(ip) is True
+
+    def test_rfc2544_allowed_with_env_var(self):
+        """198.18.x.x is allowed when HERMES_ALLOW_RFC2544=true."""
+        with patch.dict(os.environ, {"HERMES_ALLOW_RFC2544": "true"}):
+            ip = ipaddress.ip_address("198.18.0.1")
+            assert _is_blocked_ip(ip) is False
+
+    def test_rfc2544_range_start_allowed(self):
+        """198.18.0.0 (range start) allowed with env var."""
+        with patch.dict(os.environ, {"HERMES_ALLOW_RFC2544": "true"}):
+            ip = ipaddress.ip_address("198.18.0.0")
+            assert _is_blocked_ip(ip) is False
+
+    def test_rfc2544_range_end_allowed(self):
+        """198.19.255.255 (range end) allowed with env var."""
+        with patch.dict(os.environ, {"HERMES_ALLOW_RFC2544": "true"}):
+            ip = ipaddress.ip_address("198.19.255.255")
+            assert _is_blocked_ip(ip) is False
+
+    def test_rfc2544_upper_half_allowed(self):
+        """198.19.x.x (upper half of /15) allowed with env var."""
+        with patch.dict(os.environ, {"HERMES_ALLOW_RFC2544": "true"}):
+            ip = ipaddress.ip_address("198.19.128.1")
+            assert _is_blocked_ip(ip) is False
+
+    def test_other_private_still_blocked_with_env_var(self):
+        """Other private IPs remain blocked even when RFC 2544 is allowed."""
+        with patch.dict(os.environ, {"HERMES_ALLOW_RFC2544": "true"}):
+            for ip_str in ["10.0.0.1", "192.168.1.1", "172.16.0.1", "127.0.0.1"]:
+                ip = ipaddress.ip_address(ip_str)
+                assert _is_blocked_ip(ip) is True, f"{ip_str} should still be blocked"
+
+    def test_rfc2544_env_var_case_insensitive(self):
+        """HERMES_ALLOW_RFC2544=True (capitalized) also works."""
+        with patch.dict(os.environ, {"HERMES_ALLOW_RFC2544": "True"}):
+            ip = ipaddress.ip_address("198.18.0.1")
+            assert _is_blocked_ip(ip) is False
+
+    def test_rfc2544_env_var_false_still_blocks(self):
+        """HERMES_ALLOW_RFC2544=false does not allow the range."""
+        with patch.dict(os.environ, {"HERMES_ALLOW_RFC2544": "false"}):
+            ip = ipaddress.ip_address("198.18.0.1")
+            assert _is_blocked_ip(ip) is True
+
+    def test_rfc2544_is_safe_url_integration(self):
+        """End-to-end: URL resolving to RFC 2544 IP allowed with env var."""
+        with patch.dict(os.environ, {"HERMES_ALLOW_RFC2544": "true"}):
+            with patch("socket.getaddrinfo", return_value=[
+                (2, 1, 6, "", ("198.18.1.1", 0)),
+            ]):
+                assert is_safe_url("http://proxy-host.example/") is True

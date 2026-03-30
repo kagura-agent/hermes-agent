@@ -17,6 +17,7 @@ Limitations (documented, not fixable at pre-flight level):
 
 import ipaddress
 import logging
+import os
 import socket
 from urllib.parse import urlparse
 
@@ -34,9 +35,23 @@ _BLOCKED_HOSTNAMES = frozenset({
 # VPNs, and some cloud internal networks.
 _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 
+# RFC 2544 Benchmarking range (198.18.0.0/15). Python's ipaddress.is_private
+# returns True for this range, but TUN/Fake-IP proxy software (Clash, Mihomo,
+# Sing-box, Surge) routes traffic through it. Set HERMES_ALLOW_RFC2544=true to
+# allow requests to this range.
+_RFC2544_BENCHMARK = ipaddress.ip_network("198.18.0.0/15")
+
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Return True if the IP should be blocked for SSRF protection."""
+    # Allow RFC 2544 benchmark range when opted in via env var.
+    # Checked before is_private since Python marks this range as private.
+    if (
+        os.environ.get("HERMES_ALLOW_RFC2544", "").lower() == "true"
+        and isinstance(ip, ipaddress.IPv4Address)
+        and ip in _RFC2544_BENCHMARK
+    ):
+        return False
     if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
         return True
     if ip.is_multicast or ip.is_unspecified:
