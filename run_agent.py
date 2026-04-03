@@ -8644,10 +8644,11 @@ class AIAgent:
             self._iters_since_skill = 0
 
         # External memory provider: sync the completed turn + queue next prefetch
-        if self._memory_manager and final_response and user_message:
+        clean_msg = persist_user_message if persist_user_message is not None else user_message
+        if self._memory_manager and final_response and clean_msg:
             try:
-                self._memory_manager.sync_all(user_message, final_response)
-                self._memory_manager.queue_prefetch_all(user_message)
+                self._memory_manager.sync_all(clean_msg, final_response)
+                self._memory_manager.queue_prefetch_all(clean_msg)
             except Exception:
                 pass
 
