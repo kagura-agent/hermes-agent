@@ -1004,24 +1004,55 @@ class BasePlatformAdapter(ABC):
             logger.error("[%s] Fallback send also failed: %s", self.name, fallback_result.error)
         return fallback_result
 
+    # Control commands that must bypass the active-session queue.
+    # These are handled as early intercepts in run.py's _handle_message()
+    # and return quickly — they must never be queued because the agent
+    # thread may be blocked waiting for them (e.g. /approve, /deny signal
+    # a threading.Event in tools/approval.py).
+    _CONTROL_COMMANDS: frozenset[str] = frozenset({
+        "approve", "deny", "stop", "new", "reset",
+    })
+
     async def handle_message(self, event: MessageEvent) -> None:
         """
         Process an incoming message.
-        
+
         This method returns quickly by spawning background tasks.
         This allows new messages to be processed even while an agent is running,
         enabling interruption support.
         """
         if not self._message_handler:
             return
-        
+
         session_key = build_session_key(
             event.source,
             group_sessions_per_user=self.config.extra.get("group_sessions_per_user", True),
         )
-        
+
         # Check if there's already an active handler for this session
         if session_key in self._active_sessions:
+            # Control commands (/approve, /deny, /stop, /new, /reset) must be
+            # dispatched immediately — never queued.  The agent thread may be
+            # blocked waiting for them (e.g. approval.py threading.Event).
+            # They are handled as early intercepts in run.py's _handle_message()
+            # and return quickly without conflicting with the active session.
+            cmd = event.get_command()
+            if cmd and cmd in self._CONTROL_COMMANDS:
+                logger.debug(
+                    "[%s] Control command /%s bypassing active-session queue for %s",
+                    self.name, cmd, session_key,
+                )
+                task = asyncio.create_task(
+                    self._process_message_background(event, session_key, is_control=True),
+                )
+                try:
+                    self._background_tasks.add(task)
+                except TypeError:
+                    return
+                if hasattr(task, "add_done_callback"):
+                    task.add_done_callback(self._background_tasks.discard)
+                return
+
             # Special case: photo bursts/albums frequently arrive as multiple near-
             # simultaneous messages. Queue them without interrupting the active run,
             # then process them immediately after the current task finishes.
@@ -1086,8 +1117,16 @@ class BasePlatformAdapter(ABC):
             min_ms, max_ms = 800, 2500
         return random.uniform(min_ms / 1000.0, max_ms / 1000.0)
 
-    async def _process_message_background(self, event: MessageEvent, session_key: str) -> None:
-        """Background task that actually processes the message."""
+    async def _process_message_background(
+        self, event: MessageEvent, session_key: str, *, is_control: bool = False,
+    ) -> None:
+        """Background task that actually processes the message.
+
+        When *is_control* is True the task runs alongside the existing active
+        session — it skips session-lifecycle bookkeeping (no interrupt event,
+        no pending-message drain, no ``_active_sessions`` cleanup) because
+        another ``_process_message_background`` already owns the session.
+        """
         # Track delivery outcomes for the processing-complete hook
         delivery_attempted = False
         delivery_succeeded = False
@@ -1099,6 +1138,15 @@ class BasePlatformAdapter(ABC):
             delivery_attempted = True
             if getattr(result, "success", False):
                 delivery_succeeded = True
+
+        if is_control:
+            # Control commands run as lightweight fire-and-forget tasks.
+            # They must NOT touch _active_sessions or _pending_messages.
+            try:
+                await self._message_handler(event)
+            except Exception as e:
+                logger.error("[%s] Error handling control command: %s", self.name, e, exc_info=True)
+            return
 
         # Reuse the interrupt event set by handle_message() (which marks
         # the session active before spawning this task to prevent races).

@@ -1,14 +1,19 @@
 """Tests for gateway/platforms/base.py — MessageEvent, media extraction, message truncation."""
 
+import asyncio
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (
     BasePlatformAdapter,
     GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE,
     MessageEvent,
     MessageType,
 )
+from gateway.session import SessionSource
 
 
 class TestSecretCaptureGuidance:
@@ -422,3 +427,201 @@ class TestGetHumanDelay:
         with patch.dict(os.environ, env):
             delay = BasePlatformAdapter._get_human_delay()
             assert 0.1 <= delay <= 0.2
+
+
+# ---------------------------------------------------------------------------
+# handle_message — control command bypass (issue #4898)
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter_with_handler():
+    """Create a stub adapter with a mock message handler."""
+
+    class StubAdapter(BasePlatformAdapter):
+        async def connect(self):
+            return True
+
+        async def disconnect(self):
+            pass
+
+        async def send(self, *a, **kw):
+            pass
+
+        async def get_chat_info(self, *a):
+            return {}
+
+    config = PlatformConfig(enabled=True, token="test")
+    adapter = StubAdapter(config=config, platform=Platform.TELEGRAM)
+    handler = AsyncMock(return_value=None)
+    adapter.set_message_handler(handler)
+    return adapter, handler
+
+
+def _make_event(text: str) -> MessageEvent:
+    source = SessionSource(platform=Platform.TELEGRAM, chat_id="chat1", user_id="user1")
+    return MessageEvent(text=text, source=source)
+
+
+class TestHandleMessageControlBypass:
+    """Verify that /approve, /deny, and other control commands bypass the
+    active-session queue and are dispatched immediately (issue #4898)."""
+
+    @pytest.mark.asyncio
+    async def test_approve_dispatched_during_active_session(self):
+        adapter, _mock_handler = _make_adapter_with_handler()
+        event_normal = _make_event("hello")
+        event_approve = _make_event("/approve")
+
+        # Use a slow handler so the session stays active while we send /approve
+        handler_started = asyncio.Event()
+        handler_proceed = asyncio.Event()
+        handler_calls = []
+
+        async def slow_handler(event):
+            handler_calls.append(event)
+            if event.text != "/approve":
+                handler_started.set()
+                await handler_proceed.wait()
+            return None
+
+        adapter.set_message_handler(slow_handler)
+
+        # First message starts a session
+        await adapter.handle_message(event_normal)
+        await handler_started.wait()
+
+        # Session should be active now
+        assert len(adapter._active_sessions) == 1
+
+        # /approve should bypass the queue and call the handler
+        await adapter.handle_message(event_approve)
+        await asyncio.sleep(0.01)
+
+        # Handler must have been called for /approve
+        approve_calls = [e for e in handler_calls if e.text == "/approve"]
+        assert len(approve_calls) == 1, "Handler was not called for /approve during active session"
+
+        # /approve should NOT be in pending messages
+        for _key, pending in adapter._pending_messages.items():
+            assert pending.text != "/approve", "/approve was queued instead of dispatched"
+
+        # Clean up
+        handler_proceed.set()
+        await asyncio.sleep(0.01)
+
+    @pytest.mark.asyncio
+    async def test_deny_dispatched_during_active_session(self):
+        adapter, _mock_handler = _make_adapter_with_handler()
+        event_normal = _make_event("hello")
+        event_deny = _make_event("/deny")
+
+        handler_started = asyncio.Event()
+        handler_proceed = asyncio.Event()
+        handler_calls = []
+
+        async def slow_handler(event):
+            handler_calls.append(event)
+            if event.text != "/deny":
+                handler_started.set()
+                await handler_proceed.wait()
+            return None
+
+        adapter.set_message_handler(slow_handler)
+
+        await adapter.handle_message(event_normal)
+        await handler_started.wait()
+
+        await adapter.handle_message(event_deny)
+        await asyncio.sleep(0.01)
+
+        deny_calls = [e for e in handler_calls if e.text == "/deny"]
+        assert len(deny_calls) == 1, "Handler was not called for /deny during active session"
+
+        handler_proceed.set()
+        await asyncio.sleep(0.01)
+
+    @pytest.mark.asyncio
+    async def test_stop_dispatched_during_active_session(self):
+        adapter, _mock_handler = _make_adapter_with_handler()
+
+        handler_started = asyncio.Event()
+        handler_proceed = asyncio.Event()
+        handler_calls = []
+
+        async def slow_handler(event):
+            handler_calls.append(event)
+            if event.text != "/stop":
+                handler_started.set()
+                await handler_proceed.wait()
+            return None
+
+        adapter.set_message_handler(slow_handler)
+
+        await adapter.handle_message(_make_event("hello"))
+        await handler_started.wait()
+
+        await adapter.handle_message(_make_event("/stop"))
+        await asyncio.sleep(0.01)
+
+        stop_calls = [e for e in handler_calls if e.text == "/stop"]
+        assert len(stop_calls) == 1, "Handler was not called for /stop during active session"
+
+        handler_proceed.set()
+        await asyncio.sleep(0.01)
+
+    @pytest.mark.asyncio
+    async def test_regular_message_still_queued_during_active_session(self):
+        adapter, handler = _make_adapter_with_handler()
+        # Make handler block so the session stays active
+        handler_started = asyncio.Event()
+        handler_proceed = asyncio.Event()
+
+        async def slow_handler(event):
+            handler_started.set()
+            await handler_proceed.wait()
+            return None
+
+        adapter.set_message_handler(slow_handler)
+
+        await adapter.handle_message(_make_event("first"))
+        await handler_started.wait()
+
+        # Send a regular text message while session is active
+        await adapter.handle_message(_make_event("second"))
+
+        # Regular message should be in pending messages, not dispatched
+        assert len(adapter._pending_messages) == 1
+
+        # Clean up
+        handler_proceed.set()
+        await asyncio.sleep(0.01)
+
+    @pytest.mark.asyncio
+    async def test_control_command_with_botname_suffix(self):
+        """Commands with @botname suffix should still bypass the queue."""
+        adapter, _mock_handler = _make_adapter_with_handler()
+
+        handler_started = asyncio.Event()
+        handler_proceed = asyncio.Event()
+        handler_calls = []
+
+        async def slow_handler(event):
+            handler_calls.append(event)
+            if not event.text.startswith("/approve"):
+                handler_started.set()
+                await handler_proceed.wait()
+            return None
+
+        adapter.set_message_handler(slow_handler)
+
+        await adapter.handle_message(_make_event("hello"))
+        await handler_started.wait()
+
+        await adapter.handle_message(_make_event("/approve@MyBot"))
+        await asyncio.sleep(0.01)
+
+        approve_calls = [e for e in handler_calls if e.text == "/approve@MyBot"]
+        assert len(approve_calls) == 1, "/approve@MyBot was not dispatched during active session"
+
+        handler_proceed.set()
+        await asyncio.sleep(0.01)
