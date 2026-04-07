@@ -93,6 +93,11 @@ class ProviderConfig:
     api_key_env_vars: tuple = ()
     # Optional env var for base URL override
     base_url_env_var: str = ""
+    # Base URL for auxiliary/compression clients (OpenAI SDK).
+    # When inference_base_url targets a non-OpenAI-compatible surface
+    # (e.g. /anthropic), set this to the provider's OpenAI-compatible
+    # endpoint so the OpenAI SDK appends /chat/completions correctly.
+    auxiliary_base_url: str = ""
 
 
 PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
@@ -148,6 +153,7 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         inference_base_url="https://api.minimax.io/anthropic",
         api_key_env_vars=("MINIMAX_API_KEY",),
         base_url_env_var="MINIMAX_BASE_URL",
+        auxiliary_base_url="https://api.minimax.io/v1",
     ),
     "anthropic": ProviderConfig(
         id="anthropic",
@@ -171,6 +177,7 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         inference_base_url="https://api.minimaxi.com/anthropic",
         api_key_env_vars=("MINIMAX_CN_API_KEY",),
         base_url_env_var="MINIMAX_CN_BASE_URL",
+        auxiliary_base_url="https://api.minimaxi.com/v1",
     ),
     "deepseek": ProviderConfig(
         id="deepseek",

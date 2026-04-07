@@ -444,12 +444,35 @@ class TestExplicitProviderRouting:
             assert client is not None
 
     def test_explicit_minimax(self, monkeypatch):
-        """provider='minimax' should use MINIMAX_API_KEY."""
+        """provider='minimax' should use MINIMAX_API_KEY and auxiliary /v1 endpoint."""
         monkeypatch.setenv("MINIMAX_API_KEY", "mm-test-key")
         with patch("agent.auxiliary_client.OpenAI") as mock_openai:
             mock_openai.return_value = MagicMock()
             client, model = resolve_provider_client("minimax")
             assert client is not None
+            call_kwargs = mock_openai.call_args.kwargs
+            assert "/v1" in call_kwargs["base_url"]
+            assert "/anthropic" not in call_kwargs["base_url"]
+
+    def test_explicit_minimax_cn(self, monkeypatch):
+        """provider='minimax-cn' should use auxiliary /v1 endpoint, not /anthropic."""
+        monkeypatch.setenv("MINIMAX_CN_API_KEY", "mm-cn-test-key")
+        with patch("agent.auxiliary_client.OpenAI") as mock_openai:
+            mock_openai.return_value = MagicMock()
+            client, model = resolve_provider_client("minimax-cn")
+            assert client is not None
+            call_kwargs = mock_openai.call_args.kwargs
+            assert call_kwargs["base_url"] == "https://api.minimaxi.com/v1"
+
+    def test_provider_without_auxiliary_base_url_uses_inference(self, monkeypatch):
+        """Providers without auxiliary_base_url should fall back to inference_base_url."""
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-test-key")
+        with patch("agent.auxiliary_client.OpenAI") as mock_openai:
+            mock_openai.return_value = MagicMock()
+            client, model = resolve_provider_client("deepseek")
+            assert client is not None
+            call_kwargs = mock_openai.call_args.kwargs
+            assert call_kwargs["base_url"] == "https://api.deepseek.com/v1"
 
     def test_explicit_deepseek(self, monkeypatch):
         """provider='deepseek' should use DEEPSEEK_API_KEY."""

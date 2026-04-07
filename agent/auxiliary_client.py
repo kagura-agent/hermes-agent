@@ -580,7 +580,7 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
             if not api_key:
                 continue
 
-            base_url = _pool_runtime_base_url(entry, pconfig.inference_base_url) or pconfig.inference_base_url
+            base_url = _pool_runtime_base_url(entry, pconfig.inference_base_url) or pconfig.auxiliary_base_url or pconfig.inference_base_url
             model = _API_KEY_PROVIDER_AUX_MODELS.get(provider_id, "default")
             logger.debug("Auxiliary text client: %s (%s) via pool", pconfig.name, model)
             extra = {}
@@ -597,7 +597,15 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
         if not api_key:
             continue
 
-        base_url = str(creds.get("base_url", "")).strip().rstrip("/") or pconfig.inference_base_url
+        creds_base = str(creds.get("base_url", "")).strip().rstrip("/")
+        # Prefer auxiliary_base_url when the resolved base URL was not
+        # overridden by the user (i.e. it still equals inference_base_url).
+        if pconfig.auxiliary_base_url and (
+            not creds_base or creds_base == pconfig.inference_base_url.rstrip("/")
+        ):
+            base_url = pconfig.auxiliary_base_url
+        else:
+            base_url = creds_base or pconfig.inference_base_url
         model = _API_KEY_PROVIDER_AUX_MODELS.get(provider_id, "default")
         logger.debug("Auxiliary text client: %s (%s)", pconfig.name, model)
         extra = {}
@@ -1083,7 +1091,15 @@ def resolve_provider_client(
                          provider, ", ".join(tried_sources))
             return None, None
 
-        base_url = str(creds.get("base_url", "")).strip().rstrip("/") or pconfig.inference_base_url
+        creds_base = str(creds.get("base_url", "")).strip().rstrip("/")
+        # Prefer auxiliary_base_url when the resolved base URL was not
+        # overridden by the user (i.e. it still equals inference_base_url).
+        if pconfig.auxiliary_base_url and (
+            not creds_base or creds_base == pconfig.inference_base_url.rstrip("/")
+        ):
+            base_url = pconfig.auxiliary_base_url
+        else:
+            base_url = creds_base or pconfig.inference_base_url
 
         default_model = _API_KEY_PROVIDER_AUX_MODELS.get(provider, "")
         final_model = model or default_model
