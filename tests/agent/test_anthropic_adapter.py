@@ -483,6 +483,62 @@ class TestNormalizeModelName:
 
 
 # ---------------------------------------------------------------------------
+# _anthropic_preserve_dots (via RunAgent)
+# ---------------------------------------------------------------------------
+
+
+class TestAnthropicPreserveDots:
+    """Tests for RunAgent._anthropic_preserve_dots().
+
+    The method lives on RunAgent and reads self.provider / self.base_url,
+    so we use a lightweight SimpleNamespace stub to avoid constructing a
+    full RunAgent.
+    """
+
+    @staticmethod
+    def _make_stub(base_url="", provider=""):
+        from types import SimpleNamespace
+        stub = SimpleNamespace(base_url=base_url, provider=provider)
+        # Bind the unbound method to the stub
+        from run_agent import AIAgent
+        stub._anthropic_preserve_dots = AIAgent._anthropic_preserve_dots.__get__(stub)
+        return stub
+
+    def test_no_base_url_returns_false(self):
+        """Default Anthropic behaviour — dots converted to hyphens."""
+        stub = self._make_stub()
+        assert stub._anthropic_preserve_dots() is False
+
+    def test_anthropic_com_returns_false(self):
+        stub = self._make_stub(base_url="https://api.anthropic.com/v1")
+        assert stub._anthropic_preserve_dots() is False
+
+    def test_openrouter_returns_false(self):
+        stub = self._make_stub(base_url="https://openrouter.co/api/v1")
+        assert stub._anthropic_preserve_dots() is False
+
+    def test_custom_proxy_returns_true(self):
+        stub = self._make_stub(base_url="http://104.43.91.188:8000")
+        assert stub._anthropic_preserve_dots() is True
+
+    def test_custom_domain_returns_true(self):
+        stub = self._make_stub(base_url="https://my-proxy.example.com/v1")
+        assert stub._anthropic_preserve_dots() is True
+
+    def test_dashscope_returns_true(self):
+        stub = self._make_stub(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+        assert stub._anthropic_preserve_dots() is True
+
+    def test_alibaba_provider_returns_true(self):
+        stub = self._make_stub(provider="alibaba")
+        assert stub._anthropic_preserve_dots() is True
+
+    def test_alibaba_provider_case_insensitive(self):
+        stub = self._make_stub(provider="Alibaba")
+        assert stub._anthropic_preserve_dots() is True
+
+
+# ---------------------------------------------------------------------------
 # Tool conversion
 # ---------------------------------------------------------------------------
 

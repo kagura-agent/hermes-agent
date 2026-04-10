@@ -5816,14 +5816,22 @@ class AIAgent:
         return transformed
 
     def _anthropic_preserve_dots(self) -> bool:
-        """True when using an anthropic-compatible endpoint that preserves dots in model names.
-        Alibaba/DashScope keeps dots (e.g. qwen3.5-plus).
-        MiniMax keeps dots (e.g. MiniMax-M2.7).
-        OpenCode Go keeps dots (e.g. minimax-m2.7)."""
-        if (getattr(self, "provider", "") or "").lower() in {"alibaba", "minimax", "minimax-cn", "opencode-go"}:
+        """True when the endpoint expects model names with dots preserved.
+
+        Dot-to-hyphen conversion is only needed for official Anthropic and
+        OpenRouter URLs.  All other custom base_urls (proxies, alternative
+        providers) receive the model name as-is so they aren't broken by
+        the rewrite.
+        """
+        if (getattr(self, "provider", "") or "").lower() in {"alibaba", "minimax", "minimax-cn"}:
             return True
         base = (getattr(self, "base_url", "") or "").lower()
-        return "dashscope" in base or "aliyuncs" in base or "minimax" in base or "opencode.ai/zen/go" in base
+        if "dashscope" in base or "aliyuncs" in base:
+            return True
+        # Custom base_url that is NOT Anthropic or OpenRouter → preserve dots
+        if base and "anthropic.com" not in base and "openrouter.co" not in base:
+            return True
+        return False
 
     def _is_qwen_portal(self) -> bool:
         """Return True when the base URL targets Qwen Portal."""
