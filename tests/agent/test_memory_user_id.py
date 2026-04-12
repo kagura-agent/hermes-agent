@@ -109,11 +109,9 @@ class TestMemoryManagerUserIdThreading:
         assert "user_id" not in p._init_kwargs
 
     def test_multiple_providers_all_receive_user_id(self):
-        from agent.builtin_memory_provider import BuiltinMemoryProvider
-
         mgr = MemoryManager()
         # Use builtin + one external (MemoryManager only allows one external)
-        builtin = BuiltinMemoryProvider()
+        builtin = RecordingProvider("builtin")
         ext = RecordingProvider("external")
         mgr.add_provider(builtin)
         mgr.add_provider(ext)
@@ -216,12 +214,13 @@ class TestHonchoUserIdScoping:
 
         provider = HonchoMemoryProvider()
 
-        # Create a mock config with a static peer_name
+        # Create a mock config with no explicit peer_name so the gateway
+        # user_id override kicks in (source only overrides when not cfg.peer_name)
         mock_cfg = MagicMock()
         mock_cfg.enabled = True
         mock_cfg.api_key = "test-key"
         mock_cfg.base_url = None
-        mock_cfg.peer_name = "static-user"
+        mock_cfg.peer_name = None
         mock_cfg.recall_mode = "tools"  # Use tools mode to defer session init
 
         with patch(

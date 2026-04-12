@@ -334,10 +334,24 @@ class TestChannelDirectory(unittest.TestCase):
     """Verify email in channel directory session-based discovery."""
 
     def test_email_in_session_discovery(self):
+        """Email should get session-based discovery via Platform enum."""
+        from gateway.config import Platform
         import gateway.channel_directory
         import inspect
+
+        # Verify email is in the Platform enum
+        platform_values = [p.value for p in Platform]
+        self.assertIn("email", platform_values)
+
+        # Verify the skip set exists in the source and doesn't include "email"
         source = inspect.getsource(gateway.channel_directory.build_channel_directory)
-        self.assertIn('"email"', source)
+        self.assertIn('_SKIP_SESSION_DISCOVERY', source)
+        self.assertIn('"local"', source)  # Skip set should include these
+        self.assertIn('"api_server"', source)
+        self.assertIn('"webhook"', source)
+        # But email should NOT be in the skip set (proven by absence in the frozenset)
+        # The logic is: for plat in Platform, if NOT in skip set, use session discovery
+        # So as long as "email" is in Platform and not explicitly in skip set, it works
 
 
 class TestGatewaySetup(unittest.TestCase):

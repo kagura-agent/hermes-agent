@@ -350,6 +350,18 @@ class TestBlockingApprovalE2E:
         os.environ.pop("HERMES_GATEWAY_SESSION", None)
         os.environ.pop("HERMES_EXEC_ASK", None)
         os.environ.pop("HERMES_SESSION_KEY", None)
+        # Tirith's check_command_security can hang under test isolation
+        # (HERMES_HOME → temp dir, no tirith binary → network download
+        # attempt blocks the thread).  Stub it so E2E tests exercise the
+        # gateway approval path without blocking on tirith.
+        self._tirith_patcher = patch(
+            "tools.tirith_security.check_command_security",
+            return_value={"action": "allow", "findings": [], "summary": ""},
+        )
+        self._tirith_patcher.start()
+
+    def teardown_method(self):
+        self._tirith_patcher.stop()
 
     def test_blocking_approval_approve_once(self):
         """check_all_command_guards blocks until resolve_gateway_approval is called."""
