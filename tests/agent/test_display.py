@@ -57,7 +57,7 @@ class TestBuildToolPreview:
         long_cmd = "a" * 100
         result = build_tool_preview("terminal", {"command": long_cmd}, max_len=40)
         assert result is not None
-        assert len(result) <= 43  # max_len + "..."
+        assert len(result) <= 40
 
     def test_process_tool_with_none_args(self):
         """Process tool special case should also handle None args."""
@@ -87,6 +87,48 @@ class TestBuildToolPreview:
         result = build_tool_preview("session_search", {"query": "find something"})
         assert result is not None
         assert "find something" in result
+
+    # -- max_len edge cases (small values) ----------------------------------
+
+    def test_max_len_zero_means_unlimited(self):
+        """max_len=0 should not truncate at all."""
+        long_cmd = "a" * 200
+        result = build_tool_preview("terminal", {"command": long_cmd}, max_len=0)
+        assert result == long_cmd
+
+    def test_max_len_1(self):
+        result = build_tool_preview("terminal", {"command": "hello"}, max_len=1)
+        assert result is not None
+        assert len(result) <= 1
+
+    def test_max_len_2(self):
+        result = build_tool_preview("terminal", {"command": "hello"}, max_len=2)
+        assert result is not None
+        assert len(result) <= 2
+
+    def test_max_len_3(self):
+        result = build_tool_preview("terminal", {"command": "hello"}, max_len=3)
+        assert result is not None
+        assert len(result) <= 3
+
+    def test_max_len_4_uses_ellipsis(self):
+        """max_len=4 is the first value where ellipsis fits (1 char + '...')."""
+        result = build_tool_preview("terminal", {"command": "hello world"}, max_len=4)
+        assert result is not None
+        assert len(result) <= 4
+        assert result.endswith("...")
+
+    def test_max_len_normal_truncation(self):
+        """Standard truncation should use ellipsis and respect max_len."""
+        result = build_tool_preview("terminal", {"command": "a" * 50}, max_len=20)
+        assert result is not None
+        assert len(result) <= 20
+        assert result.endswith("...")
+
+    def test_max_len_no_truncation_when_short(self):
+        """When preview fits within max_len, no truncation should occur."""
+        result = build_tool_preview("terminal", {"command": "hi"}, max_len=10)
+        assert result == "hi"
 
     def test_false_like_args_zero(self):
         """Non-dict falsy values should return None, not crash."""
