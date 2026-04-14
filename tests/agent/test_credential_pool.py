@@ -405,7 +405,9 @@ def test_load_pool_seeds_env_api_key(tmp_path, monkeypatch):
 
 def test_load_pool_removes_stale_seeded_env_entry(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    # Set to empty string — positive evidence of removal (absent env vars are
+    # now preserved because another process may still provide the credential).
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
     _write_auth_store(
         tmp_path,
         {
@@ -1156,3 +1158,83 @@ def test_load_pool_does_not_seed_qwen_oauth_when_no_token(tmp_path, monkeypatch)
 
     assert not pool.has_credentials()
     assert pool.entries() == []
+
+
+# ---------------------------------------------------------------------------
+# _prune_stale_seeded_entries unit tests
+# ---------------------------------------------------------------------------
+
+def _make_entry(provider="openai", source="env:OPENAI_API_KEY", **kw):
+    from agent.credential_pool import PooledCredential
+    defaults = dict(
+        id="cred-x",
+        label="test",
+        auth_type="api_key",
+        priority=0,
+        access_token="sk-test",
+    )
+    defaults.update(kw)
+    return PooledCredential(provider=provider, source=source, **defaults)
+
+
+def test_prune_preserves_env_entry_when_env_var_absent(monkeypatch):
+    """env var not in os.environ → entry must be preserved (belongs to another process)."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    from agent.credential_pool import _prune_stale_seeded_entries
+
+    entries = [_make_entry(source="env:OPENAI_API_KEY")]
+    changed = _prune_stale_seeded_entries(entries, active_sources=set())
+    assert not changed
+    assert len(entries) == 1
+
+
+def test_prune_removes_env_entry_when_env_var_empty(monkeypatch):
+    """env var set to '' → entry must be pruned (positive evidence of removal)."""
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+
+    from agent.credential_pool import _prune_stale_seeded_entries
+
+    entries = [_make_entry(source="env:OPENAI_API_KEY")]
+    changed = _prune_stale_seeded_entries(entries, active_sources=set())
+    assert changed
+    assert len(entries) == 0
+
+
+def test_prune_removes_singleton_when_not_active():
+    """claude_code source not in active_sources → pruned."""
+    from agent.credential_pool import _prune_stale_seeded_entries
+
+    entries = [_make_entry(provider="anthropic", source="claude_code")]
+    changed = _prune_stale_seeded_entries(entries, active_sources=set())
+    assert changed
+    assert len(entries) == 0
+
+
+def test_prune_preserves_manual_entries_always():
+    """Manual source entries must never be pruned."""
+    from agent.credential_pool import _prune_stale_seeded_entries
+
+    entries = [_make_entry(source="manual")]
+    changed = _prune_stale_seeded_entries(entries, active_sources=set())
+    assert not changed
+    assert len(entries) == 1
+
+
+def test_prune_preserves_env_entry_from_different_provider(monkeypatch):
+    """Multi-provider: env var absent for one provider → its entry kept."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real")
+
+    from agent.credential_pool import _prune_stale_seeded_entries
+
+    entries = [
+        _make_entry(provider="openai", source="env:OPENAI_API_KEY"),
+        _make_entry(provider="google", source="env:GEMINI_API_KEY", id="cred-g"),
+    ]
+    # OPENAI_API_KEY is present but not in active_sources, and not empty → kept
+    # GEMINI_API_KEY is absent → kept (may belong to another process)
+    changed = _prune_stale_seeded_entries(entries, active_sources=set())
+    assert not changed
+    assert len(entries) == 2
+

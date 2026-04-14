@@ -1311,16 +1311,28 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
 
 
 def _prune_stale_seeded_entries(entries: List[PooledCredential], active_sources: Set[str]) -> bool:
-    retained = [
-        entry
-        for entry in entries
-        if _is_manual_source(entry.source)
-        or entry.source in active_sources
-        or not (
-            entry.source.startswith("env:")
-            or entry.source in {"claude_code", "hermes_pkce"}
-        )
-    ]
+    retained: List[PooledCredential] = []
+    for entry in entries:
+        if _is_manual_source(entry.source) or entry.source in active_sources:
+            retained.append(entry)
+            continue
+        if entry.source.startswith("env:"):
+            env_var = entry.source[4:]
+            if env_var not in os.environ:
+                # Env var absent from this process – keep the entry; another
+                # process may still provide it.
+                retained.append(entry)
+            elif not os.environ[env_var].strip():
+                # Env var present but empty/whitespace – positive removal signal.
+                pass  # pruned
+            else:
+                retained.append(entry)
+            continue
+        if entry.source in {"claude_code", "hermes_pkce"}:
+            # Non-env singleton source not in active_sources → prune.
+            continue
+        # Unknown source type – keep.
+        retained.append(entry)
     if len(retained) == len(entries):
         return False
     entries[:] = retained
