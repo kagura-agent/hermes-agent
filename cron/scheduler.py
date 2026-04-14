@@ -829,6 +829,12 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
                 f"— last activity: {_last_desc}"
             )
 
+        if not isinstance(result, dict):
+            raise RuntimeError(
+                f"Cron job '{job_name}': agent.run_conversation returned "
+                f"{type(result).__name__} instead of dict"
+            )
+
         final_response = result.get("final_response", "") or ""
         # Use a separate variable for log display; keep final_response clean
         # for delivery logic (empty response = no delivery).
