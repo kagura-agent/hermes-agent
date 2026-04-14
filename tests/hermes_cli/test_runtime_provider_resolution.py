@@ -1047,6 +1047,21 @@ def test_alibaba_anthropic_endpoint_override_uses_anthropic_messages(monkeypatch
     assert resolved["base_url"] == "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"
 
 
+def test_alibaba_fallback_alibaba_api_key(monkeypatch):
+    """ALIBABA_API_KEY should work as fallback for alibaba provider (#9506)."""
+    monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "alibaba")
+    monkeypatch.setattr(rp, "_get_model_config", lambda: {})
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    monkeypatch.setenv("ALIBABA_API_KEY", "test-alibaba-fallback-key")
+    monkeypatch.delenv("DASHSCOPE_BASE_URL", raising=False)
+
+    resolved = rp.resolve_runtime_provider(requested="alibaba")
+
+    assert resolved["provider"] == "alibaba"
+    assert resolved["api_key"] == "test-alibaba-fallback-key"
+    assert resolved["base_url"] == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+
+
 def test_opencode_zen_gpt_defaults_to_responses(monkeypatch):
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "opencode-zen")
     monkeypatch.setattr(rp, "_get_model_config", lambda: {"default": "gpt-5.4"})

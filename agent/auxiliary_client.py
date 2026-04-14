@@ -2341,9 +2341,15 @@ def call_llm(
             # through OpenRouter (which causes confusing 404s).
             _explicit = (resolved_provider or "").strip().lower()
             if _explicit and _explicit not in ("auto", "openrouter", "custom"):
+                from hermes_cli.auth import PROVIDER_REGISTRY
+                _pconfig = PROVIDER_REGISTRY.get(_explicit)
+                if _pconfig and _pconfig.api_key_env_vars:
+                    _env_hint = ' or '.join(_pconfig.api_key_env_vars)
+                else:
+                    _env_hint = f'{_explicit.upper()}_API_KEY'
                 raise RuntimeError(
                     f"Provider '{_explicit}' is set in config.yaml but no API key "
-                    f"was found. Set the {_explicit.upper()}_API_KEY environment "
+                    f"was found. Set the {_env_hint} environment "
                     f"variable, or switch to a different provider with `hermes model`."
                 )
             # For auto/custom with no credentials, try the full auto chain
@@ -2546,9 +2552,15 @@ async def async_call_llm(
         if client is None:
             _explicit = (resolved_provider or "").strip().lower()
             if _explicit and _explicit not in ("auto", "openrouter", "custom"):
+                from hermes_cli.auth import PROVIDER_REGISTRY
+                _pconfig = PROVIDER_REGISTRY.get(_explicit)
+                if _pconfig and _pconfig.api_key_env_vars:
+                    _env_hint = ' or '.join(_pconfig.api_key_env_vars)
+                else:
+                    _env_hint = f'{_explicit.upper()}_API_KEY'
                 raise RuntimeError(
                     f"Provider '{_explicit}' is set in config.yaml but no API key "
-                    f"was found. Set the {_explicit.upper()}_API_KEY environment "
+                    f"was found. Set the {_env_hint} environment "
                     f"variable, or switch to a different provider with `hermes model`."
                 )
             if not resolved_base_url:

@@ -130,7 +130,7 @@ PROVIDER_ENV_VARS = (
     "KIMI_API_KEY", "KIMI_BASE_URL", "MINIMAX_API_KEY", "MINIMAX_CN_API_KEY",
     "AI_GATEWAY_API_KEY", "AI_GATEWAY_BASE_URL",
     "KILOCODE_API_KEY", "KILOCODE_BASE_URL",
-    "DASHSCOPE_API_KEY", "OPENCODE_ZEN_API_KEY", "OPENCODE_GO_API_KEY",
+    "DASHSCOPE_API_KEY", "ALIBABA_API_KEY", "OPENCODE_ZEN_API_KEY", "OPENCODE_GO_API_KEY",
     "NOUS_API_KEY", "GITHUB_TOKEN", "GH_TOKEN",
     "OPENAI_BASE_URL", "HERMES_COPILOT_ACP_COMMAND", "COPILOT_CLI_PATH",
     "HERMES_COPILOT_ACP_ARGS", "COPILOT_ACP_BASE_URL",
@@ -146,6 +146,9 @@ def _clear_provider_env(monkeypatch):
 
 class TestResolveProvider:
     """Test resolve_provider() with new providers."""
+
+    def test_explicit_alibaba(self):
+        assert resolve_provider("alibaba") == "alibaba"
 
     def test_explicit_zai(self):
         assert resolve_provider("zai") == "zai"
@@ -261,6 +264,14 @@ class TestResolveProvider:
         monkeypatch.setenv("KILOCODE_API_KEY", "test-kilo-key")
         assert resolve_provider("auto") == "kilocode"
 
+    def test_auto_detects_dashscope_key(self, monkeypatch):
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "test-dashscope-key")
+        assert resolve_provider("auto") == "alibaba"
+
+    def test_auto_detects_alibaba_fallback_key(self, monkeypatch):
+        monkeypatch.setenv("ALIBABA_API_KEY", "test-alibaba-key")
+        assert resolve_provider("auto") == "alibaba"
+
     def test_auto_detects_hf_token(self, monkeypatch):
         monkeypatch.setenv("HF_TOKEN", "hf_test_token")
         assert resolve_provider("auto") == "huggingface"
@@ -302,6 +313,28 @@ class TestApiKeyProviderStatus:
         status = get_api_key_provider_status("zai")
         assert status["configured"] is True
         assert status["key_source"] == "ZAI_API_KEY"
+
+    def test_alibaba_primary_env_var(self, monkeypatch):
+        """DASHSCOPE_API_KEY should be the primary env var for alibaba."""
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "dashscope-primary-key")
+        status = get_api_key_provider_status("alibaba")
+        assert status["configured"] is True
+        assert status["key_source"] == "DASHSCOPE_API_KEY"
+
+    def test_alibaba_fallback_env_var(self, monkeypatch):
+        """ALIBABA_API_KEY should work as fallback when DASHSCOPE_API_KEY is not set."""
+        monkeypatch.setenv("ALIBABA_API_KEY", "alibaba-fallback-key")
+        status = get_api_key_provider_status("alibaba")
+        assert status["configured"] is True
+        assert status["key_source"] == "ALIBABA_API_KEY"
+
+    def test_alibaba_primary_takes_priority(self, monkeypatch):
+        """DASHSCOPE_API_KEY should take priority over ALIBABA_API_KEY."""
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "dashscope-key")
+        monkeypatch.setenv("ALIBABA_API_KEY", "alibaba-key")
+        status = get_api_key_provider_status("alibaba")
+        assert status["configured"] is True
+        assert status["key_source"] == "DASHSCOPE_API_KEY"
 
     def test_custom_base_url(self, monkeypatch):
         monkeypatch.setenv("KIMI_API_KEY", "kimi-key")
@@ -986,3 +1019,34 @@ class TestHuggingFaceModels:
         from hermes_cli.models import _PROVIDER_LABELS
         assert "huggingface" in _PROVIDER_LABELS
         assert _PROVIDER_LABELS["huggingface"] == "Hugging Face"
+
+
+class TestAlibabaProviderConfig:
+    """Tests for alibaba provider configuration and env var handling (#9506)."""
+
+    def test_alibaba_registry_has_both_env_vars(self):
+        """alibaba provider should accept both DASHSCOPE_API_KEY and ALIBABA_API_KEY."""
+        from hermes_cli.auth import PROVIDER_REGISTRY
+        pconfig = PROVIDER_REGISTRY["alibaba"]
+        assert "DASHSCOPE_API_KEY" in pconfig.api_key_env_vars
+        assert "ALIBABA_API_KEY" in pconfig.api_key_env_vars
+
+    def test_alibaba_dashscope_is_primary(self):
+        """DASHSCOPE_API_KEY should be checked before ALIBABA_API_KEY."""
+        from hermes_cli.auth import PROVIDER_REGISTRY
+        pconfig = PROVIDER_REGISTRY["alibaba"]
+        dashscope_idx = pconfig.api_key_env_vars.index("DASHSCOPE_API_KEY")
+        alibaba_idx = pconfig.api_key_env_vars.index("ALIBABA_API_KEY")
+        assert dashscope_idx < alibaba_idx
+
+    def test_error_message_shows_correct_env_vars(self):
+        """Error message for alibaba should mention DASHSCOPE_API_KEY, not just ALIBABA_API_KEY."""
+        from hermes_cli.auth import PROVIDER_REGISTRY
+        provider = "alibaba"
+        pconfig = PROVIDER_REGISTRY.get(provider)
+        if pconfig and pconfig.api_key_env_vars:
+            env_hint = ' or '.join(pconfig.api_key_env_vars)
+        else:
+            env_hint = f'{provider.upper()}_API_KEY'
+        assert "DASHSCOPE_API_KEY" in env_hint
+        assert "ALIBABA_API_KEY" in env_hint
