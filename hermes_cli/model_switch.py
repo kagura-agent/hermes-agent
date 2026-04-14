@@ -1002,6 +1002,14 @@ def list_authenticated_providers(
         for ep_name, ep_cfg in user_providers.items():
             if not isinstance(ep_cfg, dict):
                 continue
+
+            # Deduplicate against built-in / overlay providers using a
+            # case-insensitive slug so that e.g. user-defined "NVIDIA"
+            # doesn't create a second entry next to built-in "nvidia".
+            normalized_slug = ep_name.lower()
+            if normalized_slug in seen_slugs:
+                continue
+
             display_name = ep_cfg.get("name", "") or ep_name
             api_url = ep_cfg.get("api", "") or ep_cfg.get("url", "") or ""
             default_model = ep_cfg.get("default_model", "")
@@ -1029,6 +1037,7 @@ def list_authenticated_providers(
                 "source": "user-config",
                 "api_url": api_url,
             })
+            seen_slugs.add(normalized_slug)
 
     # --- 4. Saved custom providers from config ---
     # Each ``custom_providers`` entry represents one model under a named
@@ -1068,7 +1077,11 @@ def list_authenticated_providers(
                 groups[slug]["models"].append(default_model)
 
         for slug, grp in groups.items():
-            if slug in seen_slugs:
+            # Check both the full "custom:foo" slug and the bare name
+            # so that providers already registered from built-in or
+            # user-defined sections (with slug "foo") are not duplicated.
+            bare = slug.removeprefix("custom:") if slug.startswith("custom:") else slug
+            if slug in seen_slugs or bare in seen_slugs:
                 continue
             results.append({
                 "slug": slug,

@@ -117,6 +117,140 @@ def test_list_authenticated_providers_fallback_to_default_only(monkeypatch):
 
 
 # =============================================================================
+# Tests for provider deduplication (#9545)
+# =============================================================================
+
+def test_list_authenticated_providers_dedupes_user_and_builtin_case_insensitive(monkeypatch):
+    """User-defined provider with uppercase slug should not duplicate a built-in.
+
+    Regression test for #9545: a user-defined provider named 'NVIDIA' appeared
+    alongside the built-in 'nvidia', producing two entries.
+    """
+    # Fake a built-in "nvidia" provider with credentials
+    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {
+        "nvidia": {"env": ["NVIDIA_API_KEY"]},
+    })
+    monkeypatch.setattr("agent.models_dev.PROVIDER_TO_MODELS_DEV", {
+        "nvidia": "nvidia",
+    })
+    monkeypatch.setattr("agent.models_dev.get_provider_info", lambda pid: None)
+    monkeypatch.setattr("hermes_cli.providers.HERMES_OVERLAYS", {})
+    monkeypatch.setattr("hermes_cli.auth.PROVIDER_REGISTRY", {})
+    monkeypatch.setattr("hermes_cli.models._PROVIDER_MODELS", [("nvidia", ["model-a"])])
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+
+    user_providers = {
+        "NVIDIA": {
+            "name": "NVIDIA",
+            "api": "https://integrate.api.nvidia.com/v1",
+            "models": ["model-1", "model-2"],
+        },
+    }
+
+    providers = list_authenticated_providers(
+        current_provider="",
+        user_providers=user_providers,
+        custom_providers=[],
+    )
+
+    nvidia_entries = [p for p in providers if "nvidia" in p["slug"].lower()]
+    assert len(nvidia_entries) == 1, (
+        f"Expected exactly 1 nvidia entry, got {len(nvidia_entries)}: "
+        f"{[e['slug'] for e in nvidia_entries]}"
+    )
+
+
+def test_list_authenticated_providers_dedupes_custom_provider_with_prefix(monkeypatch):
+    """custom_providers entry should not duplicate a user-defined provider.
+
+    Regression test for #9545: a custom_providers entry with slug
+    'custom:nvidia' was not matched against 'nvidia' in seen_slugs.
+    """
+    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
+    monkeypatch.setattr("agent.models_dev.PROVIDER_TO_MODELS_DEV", {})
+    monkeypatch.setattr("hermes_cli.providers.HERMES_OVERLAYS", {})
+    monkeypatch.setattr("hermes_cli.auth.PROVIDER_REGISTRY", {})
+
+    user_providers = {
+        "nvidia": {
+            "name": "NVIDIA",
+            "api": "https://integrate.api.nvidia.com/v1",
+            "models": ["model-1", "model-2"],
+        },
+    }
+
+    # This compatibility view generates slug "custom:nvidia" which
+    # previously slipped past the seen_slugs check.
+    custom_providers = [
+        {
+            "name": "NVIDIA",
+            "base_url": "https://integrate.api.nvidia.com/v1",
+            "model": "model-1",
+        },
+    ]
+
+    providers = list_authenticated_providers(
+        current_provider="",
+        user_providers=user_providers,
+        custom_providers=custom_providers,
+    )
+
+    nvidia_entries = [p for p in providers if "nvidia" in p["slug"].lower()]
+    assert len(nvidia_entries) == 1, (
+        f"Expected exactly 1 nvidia entry, got {len(nvidia_entries)}: "
+        f"{[e['slug'] for e in nvidia_entries]}"
+    )
+
+
+def test_list_authenticated_providers_triple_entry_regression(monkeypatch):
+    """Full regression for #9545: built-in + user-defined + custom_providers.
+
+    When NVIDIA appears in all three sources, only one entry should show.
+    """
+    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {
+        "nvidia": {"env": ["NVIDIA_API_KEY"]},
+    })
+    monkeypatch.setattr("agent.models_dev.PROVIDER_TO_MODELS_DEV", {
+        "nvidia": "nvidia",
+    })
+    monkeypatch.setattr("agent.models_dev.get_provider_info", lambda pid: None)
+    monkeypatch.setattr("hermes_cli.providers.HERMES_OVERLAYS", {})
+    monkeypatch.setattr("hermes_cli.auth.PROVIDER_REGISTRY", {})
+    monkeypatch.setattr("hermes_cli.models._PROVIDER_MODELS", [("nvidia", ["model-a"])])
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+
+    user_providers = {
+        "NVIDIA": {
+            "name": "NVIDIA",
+            "api": "https://integrate.api.nvidia.com/v1",
+            "models": ["model-1", "model-2"],
+        },
+    }
+
+    custom_providers = [
+        {
+            "name": "NVIDIA",
+            "base_url": "https://integrate.api.nvidia.com/v1",
+            "model": "model-1",
+        },
+    ]
+
+    providers = list_authenticated_providers(
+        current_provider="",
+        user_providers=user_providers,
+        custom_providers=custom_providers,
+    )
+
+    nvidia_entries = [p for p in providers if "nvidia" in p["slug"].lower()]
+    assert len(nvidia_entries) == 1, (
+        f"Expected exactly 1 nvidia entry, got {len(nvidia_entries)}: "
+        f"{[(e['slug'], e['source']) for e in nvidia_entries]}"
+    )
+    # The built-in entry should win (it's added first)
+    assert nvidia_entries[0]["source"] == "built-in"
+
+
+# =============================================================================
 # Tests for _get_named_custom_provider with providers: dict
 # =============================================================================
 
