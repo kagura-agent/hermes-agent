@@ -390,6 +390,10 @@ def _resolve_named_custom_runtime(
         model_name = custom_provider.get("model")
         if model_name:
             pool_result["model"] = model_name
+        # Allow explicit_api_key to override the pool credential (#9315).
+        if has_usable_secret(explicit_api_key):
+            pool_result["api_key"] = explicit_api_key
+            pool_result["source"] = pool_result.get("source", "") + ":explicit_api_key_override"
         return pool_result
 
     api_key_candidates = [
@@ -498,6 +502,15 @@ def _resolve_openrouter_runtime(
             base_url, effective_provider, _parse_api_mode(model_cfg.get("api_mode")),
         )
         if pool_result:
+            # Allow explicit_api_key or cfg_api_key to override pool credential (#9315).
+            override_key = ""
+            if has_usable_secret(explicit_api_key):
+                override_key = explicit_api_key
+            elif use_config_base_url and has_usable_secret(cfg_api_key):
+                override_key = cfg_api_key
+            if override_key:
+                pool_result["api_key"] = override_key
+                pool_result["source"] = pool_result.get("source", "") + ":explicit_api_key_override"
             return pool_result
 
     if effective_provider == "custom" and not api_key and not _is_openrouter_url:

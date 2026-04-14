@@ -1412,3 +1412,144 @@ def test_named_custom_runtime_no_model_when_absent(monkeypatch):
 
     resolved = rp.resolve_runtime_provider(requested="my-server")
     assert "model" not in resolved
+
+
+# ------------------------------------------------------------------
+# fix #9315 — explicit api_key must override pool credential
+# ------------------------------------------------------------------
+
+
+def test_named_custom_runtime_explicit_key_overrides_pool(monkeypatch):
+    """When a named custom provider matches a pool AND explicit_api_key is set,
+    the explicit key should win over the pool credential."""
+    monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "my-server")
+    monkeypatch.setattr(
+        rp, "_get_named_custom_provider",
+        lambda p: {
+            "name": "my-server",
+            "base_url": "http://localhost:8000/v1",
+            "api_key": "cfg-key",
+            "model": "test-model",
+        },
+    )
+    monkeypatch.setattr(
+        rp, "_try_resolve_from_custom_pool",
+        lambda *a, **k: {
+            "provider": "custom",
+            "api_mode": "chat_completions",
+            "base_url": "http://localhost:8000/v1",
+            "api_key": "pool-key",
+            "source": "pool:custom:my-server",
+        },
+    )
+
+    resolved = rp.resolve_runtime_provider(
+        requested="my-server",
+        explicit_api_key="explicit-override-key",
+    )
+
+    assert resolved["api_key"] == "explicit-override-key", (
+        "explicit_api_key must override pool credential"
+    )
+    assert ":explicit_api_key_override" in resolved["source"]
+    assert resolved["model"] == "test-model"
+
+
+def test_named_custom_runtime_pool_used_when_no_explicit_key(monkeypatch):
+    """When no explicit_api_key is provided, pool credential should be used as-is."""
+    monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "my-server")
+    monkeypatch.setattr(
+        rp, "_get_named_custom_provider",
+        lambda p: {
+            "name": "my-server",
+            "base_url": "http://localhost:8000/v1",
+            "api_key": "cfg-key",
+        },
+    )
+    monkeypatch.setattr(
+        rp, "_try_resolve_from_custom_pool",
+        lambda *a, **k: {
+            "provider": "custom",
+            "api_mode": "chat_completions",
+            "base_url": "http://localhost:8000/v1",
+            "api_key": "pool-key",
+            "source": "pool:custom:my-server",
+        },
+    )
+
+    resolved = rp.resolve_runtime_provider(requested="my-server")
+
+    assert resolved["api_key"] == "pool-key", (
+        "pool credential should be used when no explicit key"
+    )
+    assert ":explicit_api_key_override" not in resolved["source"]
+
+
+def test_openrouter_custom_explicit_key_overrides_pool(monkeypatch):
+    """OpenRouter custom path: explicit_api_key overrides pool credential."""
+    monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "openrouter")
+    monkeypatch.setattr(
+        rp, "_get_model_config",
+        lambda: {
+            "provider": "custom",
+            "base_url": "https://my-api.example.com/v1",
+        },
+    )
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENROUTER_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(
+        rp, "_try_resolve_from_custom_pool",
+        lambda *a, **k: {
+            "provider": "custom",
+            "api_mode": "chat_completions",
+            "base_url": "https://my-api.example.com/v1",
+            "api_key": "pool-key",
+            "source": "pool:custom",
+        },
+    )
+
+    resolved = rp.resolve_runtime_provider(
+        requested="custom",
+        explicit_api_key="explicit-override-key",
+    )
+
+    assert resolved["api_key"] == "explicit-override-key", (
+        "explicit_api_key must override pool credential in openrouter path"
+    )
+    assert ":explicit_api_key_override" in resolved["source"]
+
+
+def test_openrouter_custom_cfg_key_overrides_pool_when_config_base_url(monkeypatch):
+    """OpenRouter custom path: cfg_api_key overrides pool when use_config_base_url is true."""
+    monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "openrouter")
+    monkeypatch.setattr(
+        rp, "_get_model_config",
+        lambda: {
+            "provider": "custom",
+            "base_url": "https://my-api.example.com/v1",
+            "api_key": "cfg-api-key",
+        },
+    )
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENROUTER_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(
+        rp, "_try_resolve_from_custom_pool",
+        lambda *a, **k: {
+            "provider": "custom",
+            "api_mode": "chat_completions",
+            "base_url": "https://my-api.example.com/v1",
+            "api_key": "pool-key",
+            "source": "pool:custom",
+        },
+    )
+
+    resolved = rp.resolve_runtime_provider(requested="custom")
+
+    assert resolved["api_key"] == "cfg-api-key", (
+        "cfg_api_key must override pool credential when use_config_base_url is true"
+    )
+    assert ":explicit_api_key_override" in resolved["source"]
