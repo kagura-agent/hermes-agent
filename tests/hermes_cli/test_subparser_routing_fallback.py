@@ -56,8 +56,10 @@ def _safe_parse(parser, subparsers, argv):
             args = parser.parse_args(argv)
             sys.stderr = saved_stderr
             return args
-        except SystemExit:
+        except SystemExit as exc:
             sys.stderr = saved_stderr
+            if exc.code == 0:
+                raise
             subparsers.required = False
             return parser.parse_args(argv)
     else:
@@ -146,3 +148,23 @@ class TestSubparserRoutingFallback:
         assert args.yolo is True
         assert args.worktree is True
         assert args.skills == ["myskill"]
+
+    def test_subcommand_help_prints_once(self, capsys):
+        """Regression test for #10230: subcommand -h should not print help twice."""
+        parser, sub = _build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            _safe_parse(parser, sub, ["gateway", "-h"])
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        usage_count = captured.out.count("usage: hermes gateway")
+        assert usage_count == 1, f"Help printed {usage_count} times, expected 1"
+
+    def test_top_level_help_prints_once(self, capsys):
+        """Top-level -h should also print help exactly once."""
+        parser, sub = _build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            _safe_parse(parser, sub, ["-h"])
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        usage_count = captured.out.count("usage: hermes")
+        assert usage_count == 1, f"Help printed {usage_count} times, expected 1"
