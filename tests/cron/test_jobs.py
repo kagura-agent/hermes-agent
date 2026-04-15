@@ -279,6 +279,25 @@ class TestUpdateJob:
         result = update_job("nonexistent_id", {"name": "X"})
         assert result is None
 
+    def test_update_schedule_with_string(self, tmp_cron_dir):
+        """update_job() should accept a string schedule and parse it into a dict."""
+        job = create_job(prompt="Daily report", schedule="every 1h")
+        assert job["schedule"]["kind"] == "interval"
+        assert job["schedule"]["minutes"] == 60
+
+        updated = update_job(job["id"], {"schedule": "every 10m"})
+        assert updated is not None
+        assert isinstance(updated["schedule"], dict)
+        assert updated["schedule"]["kind"] == "interval"
+        assert updated["schedule"]["minutes"] == 10
+        assert updated["schedule_display"] == "every 10m"
+
+        # Verify persisted to disk
+        fetched = get_job(job["id"])
+        assert fetched["schedule"]["kind"] == "interval"
+        assert fetched["schedule"]["minutes"] == 10
+        assert fetched["schedule_display"] == "every 10m"
+
 
 class TestPauseResumeJob:
     def test_pause_sets_state(self, tmp_cron_dir):

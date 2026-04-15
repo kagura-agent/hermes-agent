@@ -501,6 +501,9 @@ def update_job(job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]
 
         if schedule_changed:
             updated_schedule = updated["schedule"]
+            if isinstance(updated_schedule, str):
+                updated_schedule = parse_schedule(updated_schedule)
+                updated["schedule"] = updated_schedule
             updated["schedule_display"] = updates.get(
                 "schedule_display",
                 updated_schedule.get("display", updated.get("schedule_display")),

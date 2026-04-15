@@ -351,6 +351,29 @@ class TestUpdateJob:
                 data = await resp.json()
                 assert "No valid fields" in data["error"]
 
+    @pytest.mark.asyncio
+    async def test_update_job_string_schedule(self, adapter):
+        """PATCH /api/jobs/{id} with a string schedule passes it through."""
+        app = _create_app(adapter)
+        updated_job = {**SAMPLE_JOB, "schedule": {"kind": "interval", "minutes": 10, "display": "every 10m"}}
+        mock_update = MagicMock(return_value=updated_job)
+        async with TestClient(TestServer(app)) as cli:
+            with patch.object(
+                APIServerAdapter, "_CRON_AVAILABLE", True
+            ), patch.object(
+                APIServerAdapter, "_cron_update", mock_update
+            ):
+                resp = await cli.patch(
+                    f"/api/jobs/{VALID_JOB_ID}",
+                    json={"schedule": "every 10m"},
+                )
+                assert resp.status == 200
+                data = await resp.json()
+                assert data["job"] == updated_job
+                mock_update.assert_called_once()
+                call_args = mock_update.call_args
+                assert call_args[0][1]["schedule"] == "every 10m"
+
 
 # ---------------------------------------------------------------------------
 # 13. test_delete_job
