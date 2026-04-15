@@ -204,7 +204,7 @@ install_uv() {
     # Check common locations for uv
     if command -v uv &> /dev/null; then
         UV_CMD="uv"
-        UV_VERSION=$($UV_CMD --version 2>/dev/null)
+        UV_VERSION=$("$UV_CMD" --version 2>/dev/null)
         log_success "uv found ($UV_VERSION)"
         return 0
     fi
@@ -212,7 +212,7 @@ install_uv() {
     # Check ~/.local/bin (default uv install location) even if not on PATH yet
     if [ -x "$HOME/.local/bin/uv" ]; then
         UV_CMD="$HOME/.local/bin/uv"
-        UV_VERSION=$($UV_CMD --version 2>/dev/null)
+        UV_VERSION=$("$UV_CMD" --version 2>/dev/null)
         log_success "uv found at ~/.local/bin ($UV_VERSION)"
         return 0
     fi
@@ -220,7 +220,7 @@ install_uv() {
     # Check ~/.cargo/bin (alternative uv install location)
     if [ -x "$HOME/.cargo/bin/uv" ]; then
         UV_CMD="$HOME/.cargo/bin/uv"
-        UV_VERSION=$($UV_CMD --version 2>/dev/null)
+        UV_VERSION=$("$UV_CMD" --version 2>/dev/null)
         log_success "uv found at ~/.cargo/bin ($UV_VERSION)"
         return 0
     fi
@@ -240,7 +240,7 @@ install_uv() {
             log_info "Try adding ~/.local/bin to your PATH and re-running"
             exit 1
         fi
-        UV_VERSION=$($UV_CMD --version 2>/dev/null)
+        UV_VERSION=$("$UV_CMD" --version 2>/dev/null)
         log_success "uv installed ($UV_VERSION)"
     else
         log_error "Failed to install uv"
@@ -255,7 +255,7 @@ check_python() {
         if command -v python >/dev/null 2>&1; then
             PYTHON_PATH="$(command -v python)"
             if "$PYTHON_PATH" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
-                PYTHON_FOUND_VERSION=$($PYTHON_PATH --version 2>/dev/null)
+                PYTHON_FOUND_VERSION=$("$PYTHON_PATH" --version 2>/dev/null)
                 log_success "Python found: $PYTHON_FOUND_VERSION"
                 return 0
             fi
@@ -264,7 +264,7 @@ check_python() {
         log_info "Installing Python via pkg..."
         pkg install -y python >/dev/null
         PYTHON_PATH="$(command -v python)"
-        PYTHON_FOUND_VERSION=$($PYTHON_PATH --version 2>/dev/null)
+        PYTHON_FOUND_VERSION=$("$PYTHON_PATH" --version 2>/dev/null)
         log_success "Python installed: $PYTHON_FOUND_VERSION"
         return 0
     fi
@@ -273,18 +273,18 @@ check_python() {
 
     # Let uv handle Python — it can download and manage Python versions
     # First check if a suitable Python is already available
-    if $UV_CMD python find "$PYTHON_VERSION" &> /dev/null; then
-        PYTHON_PATH=$($UV_CMD python find "$PYTHON_VERSION")
-        PYTHON_FOUND_VERSION=$($PYTHON_PATH --version 2>/dev/null)
+    if "$UV_CMD" python find "$PYTHON_VERSION" &> /dev/null; then
+        PYTHON_PATH="$("$UV_CMD" python find "$PYTHON_VERSION")"
+        PYTHON_FOUND_VERSION=$("$PYTHON_PATH" --version 2>/dev/null)
         log_success "Python found: $PYTHON_FOUND_VERSION"
         return 0
     fi
 
     # Python not found — use uv to install it (no sudo needed!)
     log_info "Python $PYTHON_VERSION not found, installing via uv..."
-    if $UV_CMD python install "$PYTHON_VERSION"; then
-        PYTHON_PATH=$($UV_CMD python find "$PYTHON_VERSION")
-        PYTHON_FOUND_VERSION=$($PYTHON_PATH --version 2>/dev/null)
+    if "$UV_CMD" python install "$PYTHON_VERSION"; then
+        PYTHON_PATH="$("$UV_CMD" python find "$PYTHON_VERSION")"
+        PYTHON_FOUND_VERSION=$("$PYTHON_PATH" --version 2>/dev/null)
         log_success "Python installed: $PYTHON_FOUND_VERSION"
     else
         log_error "Failed to install Python $PYTHON_VERSION"
@@ -786,7 +786,7 @@ setup_venv() {
     fi
 
     # uv creates the venv and pins the Python version in one step
-    $UV_CMD venv venv --python "$PYTHON_VERSION"
+    "$UV_CMD" venv venv --python "$PYTHON_VERSION"
 
     log_success "Virtual environment ready (Python $PYTHON_VERSION)"
 }
@@ -872,11 +872,11 @@ install_deps() {
     # Install the main package in editable mode with all extras.
     # Try [all] first, fall back to base install if extras have issues.
     ALL_INSTALL_LOG=$(mktemp)
-    if ! $UV_CMD pip install -e ".[all]" 2>"$ALL_INSTALL_LOG"; then
+    if ! "$UV_CMD" pip install -e ".[all]" 2>"$ALL_INSTALL_LOG"; then
         log_warn "Full install (.[all]) failed, trying base install..."
         log_info "Reason: $(tail -5 "$ALL_INSTALL_LOG" | head -3)"
         rm -f "$ALL_INSTALL_LOG"
-        if ! $UV_CMD pip install -e "."; then
+        if ! "$UV_CMD" pip install -e "."; then
             log_error "Package installation failed."
             log_info "Check that build tools are installed: sudo apt install build-essential python3-dev"
             log_info "Then re-run: cd $INSTALL_DIR && uv pip install -e '.[all]'"
