@@ -32,6 +32,7 @@ def _clean_env(monkeypatch):
     for key in (
         "HINDSIGHT_API_KEY", "HINDSIGHT_API_URL", "HINDSIGHT_BANK_ID",
         "HINDSIGHT_BUDGET", "HINDSIGHT_MODE", "HINDSIGHT_LLM_API_KEY",
+        "HINDSIGHT_CLIENT_TIMEOUT",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -203,6 +204,53 @@ class TestConfig:
         assert cfg["apiKey"] == "env-key"
         assert cfg["banks"]["hermes"]["bankId"] == "env-bank"
         assert cfg["banks"]["hermes"]["budget"] == "high"
+
+    def test_default_client_timeout(self, provider):
+        """Default client_timeout should be 120.0."""
+        assert provider._client_timeout == 120.0
+
+    def test_custom_client_timeout_from_config(self, provider_with_config):
+        """client_timeout should be configurable via config."""
+        p = provider_with_config(client_timeout=60.0)
+        assert p._client_timeout == 60.0
+
+    def test_client_timeout_from_env_var(self, tmp_path, monkeypatch):
+        """HINDSIGHT_CLIENT_TIMEOUT env var should override config."""
+        config = {
+            "mode": "cloud",
+            "apiKey": "test-key",
+            "api_url": "http://localhost:9999",
+            "bank_id": "test-bank",
+            "client_timeout": 60.0,
+        }
+        config_path = tmp_path / "hindsight" / "config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(json.dumps(config))
+
+        monkeypatch.setattr(
+            "plugins.memory.hindsight.get_hermes_home", lambda: tmp_path
+        )
+        monkeypatch.setenv("HINDSIGHT_CLIENT_TIMEOUT", "90.0")
+
+        p = HindsightMemoryProvider()
+        p.initialize(session_id="test-session", hermes_home=str(tmp_path), platform="cli")
+        assert p._client_timeout == 90.0
+
+    def test_get_client_passes_configured_timeout(self, provider_with_config):
+        """_get_client() should pass the configured timeout to Hindsight constructor."""
+        import sys
+
+        p = provider_with_config(client_timeout=45.0)
+        p._client = None  # force re-creation
+
+        mock_cls = MagicMock()
+        mock_module = MagicMock()
+        mock_module.Hindsight = mock_cls
+        with patch.dict(sys.modules, {"hindsight_client": mock_module}):
+            p._get_client()
+            mock_cls.assert_called_once()
+            call_kwargs = mock_cls.call_args
+            assert call_kwargs[1]["timeout"] == 45.0
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +609,7 @@ class TestConfigSchema:
             "retain_context",
             "recall_max_tokens", "recall_max_input_chars",
             "recall_prompt_preamble",
+            "client_timeout",
         }
         assert expected_keys.issubset(keys), f"Missing: {expected_keys - keys}"
 

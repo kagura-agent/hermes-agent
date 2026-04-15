@@ -11,6 +11,7 @@ Config via environment variables:
   HINDSIGHT_BUDGET    — recall budget: low/mid/high (default: mid)
   HINDSIGHT_API_URL   — API endpoint
   HINDSIGHT_MODE      — cloud or local (default: cloud)
+  HINDSIGHT_CLIENT_TIMEOUT — cloud client timeout in seconds (default: 120)
 
 Or via $HERMES_HOME/hindsight/config.json (profile-scoped), falling back to
 ~/.hindsight/config.json (legacy, shared) for backward compatibility.
@@ -225,6 +226,7 @@ class HindsightMemoryProvider(MemoryProvider):
         self._bank_mission = ""
         self._bank_retain_mission: str | None = None
         self._retain_async = True
+        self._client_timeout = 120.0
 
     @property
     def name(self) -> str:
@@ -434,6 +436,7 @@ class HindsightMemoryProvider(MemoryProvider):
             {"key": "recall_max_tokens", "description": "Maximum tokens for recall results", "default": 4096},
             {"key": "recall_max_input_chars", "description": "Maximum input query length for auto-recall", "default": 800},
             {"key": "recall_prompt_preamble", "description": "Custom preamble for recalled memories in context"},
+            {"key": "client_timeout", "description": "Timeout in seconds for the Hindsight cloud client", "default": 120.0, "env_var": "HINDSIGHT_CLIENT_TIMEOUT"},
         ]
 
     def _get_client(self):
@@ -458,7 +461,7 @@ class HindsightMemoryProvider(MemoryProvider):
                 self._client = HindsightEmbedded(**kwargs)
             else:
                 from hindsight_client import Hindsight
-                kwargs = {"base_url": self._api_url, "timeout": 30.0}
+                kwargs = {"base_url": self._api_url, "timeout": self._client_timeout}
                 if self._api_key:
                     kwargs["api_key"] = self._api_key
                 logger.debug("Creating Hindsight cloud client (url=%s, has_key=%s)",
@@ -537,6 +540,10 @@ class HindsightMemoryProvider(MemoryProvider):
         self._recall_prompt_preamble = self._config.get("recall_prompt_preamble", "")
         self._recall_max_input_chars = int(self._config.get("recall_max_input_chars", 800))
         self._retain_async = self._config.get("retain_async", True)
+        self._client_timeout = float(
+            os.environ.get("HINDSIGHT_CLIENT_TIMEOUT")
+            or self._config.get("client_timeout", 120.0)
+        )
 
         _client_version = "unknown"
         try:
