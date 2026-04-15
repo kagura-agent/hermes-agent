@@ -801,6 +801,80 @@ class TestFindGatewayPidsExclude:
 
 
 # ---------------------------------------------------------------------------
+# find_gateway_pids uses POSIX ps flags & handles errors (#9723)
+# ---------------------------------------------------------------------------
+
+
+class TestFindGatewayPidsDocker:
+    """Verify find_gateway_pids uses POSIX ``-e`` flag and handles ps failure."""
+
+    def test_ps_uses_posix_e_flag(self, monkeypatch):
+        """The ps command must use '-e' (POSIX), not '-ax' (BSD)."""
+        monkeypatch.setattr(gateway_cli, "is_windows", lambda: False)
+        monkeypatch.setattr(gateway_cli, "_get_service_pids", lambda: set())
+        monkeypatch.setattr(gateway_cli, "get_hermes_home",
+                            lambda: __import__("pathlib").Path("/tmp/.hermes"))
+        monkeypatch.setattr(gateway_cli, "_profile_arg", lambda hermes_home=None: "")
+
+        captured_cmds = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmds.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(gateway_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr("os.getpid", lambda: 999)
+
+        gateway_cli.find_gateway_pids()
+
+        assert len(captured_cmds) == 1
+        ps_cmd = captured_cmds[0]
+        assert "-e" in ps_cmd, f"Expected '-e' in ps command, got {ps_cmd}"
+        assert "-ax" not in ps_cmd, f"'-ax' should not appear in ps command, got {ps_cmd}"
+
+    def test_ps_nonzero_exit_returns_service_pids_only(self, monkeypatch):
+        """When ps fails (e.g. in Docker), return service-managed PIDs only."""
+        monkeypatch.setattr(gateway_cli, "is_windows", lambda: False)
+        monkeypatch.setattr(gateway_cli, "_get_service_pids", lambda: {42})
+        monkeypatch.setattr(gateway_cli, "get_hermes_home",
+                            lambda: __import__("pathlib").Path("/tmp/.hermes"))
+        monkeypatch.setattr(gateway_cli, "_profile_arg", lambda hermes_home=None: "")
+
+        def fake_run(cmd, **kwargs):
+            return subprocess.CompletedProcess(
+                cmd, 1,
+                stdout="error: personality not set\n",
+                stderr="",
+            )
+
+        monkeypatch.setattr(gateway_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr("os.getpid", lambda: 999)
+
+        pids = gateway_cli.find_gateway_pids()
+
+        # Should still have the service PID, but should NOT have parsed
+        # the error output as if it were valid ps data.
+        assert pids == [42]
+
+    def test_ps_nonzero_exit_no_service_pids(self, monkeypatch):
+        """When ps fails and there are no service PIDs, return empty list."""
+        monkeypatch.setattr(gateway_cli, "is_windows", lambda: False)
+        monkeypatch.setattr(gateway_cli, "_get_service_pids", lambda: set())
+        monkeypatch.setattr(gateway_cli, "get_hermes_home",
+                            lambda: __import__("pathlib").Path("/tmp/.hermes"))
+        monkeypatch.setattr(gateway_cli, "_profile_arg", lambda hermes_home=None: "")
+
+        def fake_run(cmd, **kwargs):
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="ps: error")
+
+        monkeypatch.setattr(gateway_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr("os.getpid", lambda: 999)
+
+        pids = gateway_cli.find_gateway_pids()
+        assert pids == []
+
+
+# ---------------------------------------------------------------------------
 # Gateway mode writes exit code before restart (#8300)
 # ---------------------------------------------------------------------------
 
