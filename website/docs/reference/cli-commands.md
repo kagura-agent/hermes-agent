@@ -157,6 +157,27 @@ Subcommands:
 | `uninstall` | Remove the installed service. |
 | `setup` | Interactive messaging-platform setup. |
 
+### `hermes gateway start`
+
+| Option | Description |
+|--------|-------------|
+| `--all` | Kill all stale gateway processes across all profiles before starting. Useful in multi-profile setups to ensure a clean start. |
+| `--system` | Target the system-level systemd service instead of user-level. |
+
+### `hermes gateway stop`
+
+| Option | Description |
+|--------|-------------|
+| `--all` | Stop all gateway processes across all profiles, not just the current one. |
+| `--system` | Target the system-level systemd service instead of user-level. |
+
+### `hermes gateway restart`
+
+| Option | Description |
+|--------|-------------|
+| `--all` | Kill all gateway processes across all profiles before restarting. |
+| `--system` | Target the system-level systemd service instead of user-level. |
+
 :::tip WSL users
 Use `hermes gateway run` instead of `hermes gateway start` — WSL's systemd support is unreliable. Wrap it in tmux for persistence: `tmux new -s hermes 'hermes gateway run'`. See [WSL FAQ](/docs/reference/faq#wsl-gateway-keeps-disconnecting-or-hermes-gateway-start-fails) for details.
 :::
