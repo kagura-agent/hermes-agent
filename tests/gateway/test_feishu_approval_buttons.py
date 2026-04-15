@@ -1,5 +1,6 @@
 """Tests for Feishu interactive card approval buttons."""
 
+import asyncio
 import importlib.util
 import json
 import sys
@@ -442,3 +443,215 @@ class TestCardActionCallbackResponse:
         card = response.card.data
         assert "Old Name" not in card["elements"][0]["content"]
         assert "ou_expired" in card["elements"][0]["content"]
+
+
+# ===========================================================================
+# _run_official_feishu_ws_client — CARD monkey-patch
+# ===========================================================================
+
+
+class _FakeHeader:
+    """Minimal protobuf-like header for testing."""
+    def __init__(self, key: str = "", value: str = ""):
+        self.key = key
+        self.value = value
+
+
+class _FakeHeaders(list):
+    """Minimal protobuf-like repeated headers container."""
+    def add(self):
+        h = _FakeHeader()
+        self.append(h)
+        return h
+
+
+class _FakeFrame:
+    """Minimal protobuf-like Frame for testing _patched_handle_data_frame."""
+    def __init__(self, headers=None, payload=b"{}"):
+        self.headers = headers if headers is not None else _FakeHeaders()
+        self.payload = payload
+
+    def SerializeToString(self):
+        return self.payload
+
+
+def _make_card_frame(
+    msg_type: str = "card",
+    msg_id: str = "msg_card_001",
+    trace_id: str = "trace_001",
+    sum_: str = "1",
+    seq: str = "0",
+    payload: bytes = b'{"test": "data"}',
+) -> _FakeFrame:
+    """Build a fake WS frame with CARD type headers."""
+    headers = _FakeHeaders()
+    for k, v in [
+        ("type", msg_type),
+        ("message_id", msg_id),
+        ("trace_id", trace_id),
+        ("sum", sum_),
+        ("seq", seq),
+    ]:
+        headers.append(_FakeHeader(k, v))
+    return _FakeFrame(headers=headers, payload=payload)
+
+
+def _ensure_ws_mocks():
+    """Provide deeper lark_oapi.ws.* stubs needed by _run_official_feishu_ws_client."""
+    import enum as _enum
+
+    class _MockMessageType(_enum.Enum):
+        EVENT = "event"
+        CARD = "card"
+        PING = "ping"
+        PONG = "pong"
+
+    class _MockFrameType(_enum.Enum):
+        CONTROL = 0
+        DATA = 1
+
+    class _MockResponse:
+        def __init__(self, code=None):
+            self.code = code
+            self.data = None
+
+    ws_client_mod = MagicMock()
+    ws_client_mod.websockets = MagicMock()
+
+    ws_enum_mod = MagicMock()
+    ws_enum_mod.MessageType = _MockMessageType
+    ws_enum_mod.FrameType = _MockFrameType
+
+    ws_const_mod = MagicMock()
+    ws_const_mod.HEADER_TYPE = "type"
+    ws_const_mod.HEADER_MESSAGE_ID = "message_id"
+    ws_const_mod.HEADER_TRACE_ID = "trace_id"
+    ws_const_mod.HEADER_SUM = "sum"
+    ws_const_mod.HEADER_SEQ = "seq"
+    ws_const_mod.HEADER_BIZ_RT = "biz_rt"
+
+    ws_model_mod = MagicMock()
+    ws_model_mod.Response = _MockResponse
+
+    core_const_mod = MagicMock()
+    core_const_mod.UTF_8 = "utf-8"
+
+    core_json_mod = MagicMock()
+    core_json_mod.JSON = MagicMock()
+    core_json_mod.JSON.marshal = MagicMock(side_effect=lambda x: json.dumps({"code": 200}))
+
+    mods = {
+        "lark_oapi.ws": MagicMock(),
+        "lark_oapi.ws.client": ws_client_mod,
+        "lark_oapi.ws.enum": ws_enum_mod,
+        "lark_oapi.ws.const": ws_const_mod,
+        "lark_oapi.ws.model": ws_model_mod,
+        "lark_oapi.core": MagicMock(),
+        "lark_oapi.core.const": core_const_mod,
+        "lark_oapi.core.json": core_json_mod,
+    }
+    return mods, _MockMessageType
+
+
+def _run_ws_client_with_patch():
+    """Execute _run_official_feishu_ws_client to install the monkey-patch,
+    returning (ws_client, original_handle, MessageType)."""
+    ws_mods, msg_type_cls = _ensure_ws_mocks()
+
+    ws_client = MagicMock()
+    original_handle = AsyncMock()
+    ws_client._handle_data_frame = original_handle
+    ws_client._event_handler = MagicMock()
+    ws_client._event_handler.do_without_validation = MagicMock(return_value=None)
+    ws_client._combine = MagicMock()
+    ws_client._write_message = AsyncMock()
+    ws_client.start = MagicMock()
+
+    adapter = MagicMock()
+    adapter._ws_reconnect_nonce = 0
+    adapter._ws_reconnect_interval = 10
+    adapter._ws_ping_interval = None
+    adapter._ws_ping_timeout = None
+
+    with patch.dict("sys.modules", ws_mods):
+        feishu_module._run_official_feishu_ws_client(ws_client, adapter)
+
+    return ws_client, original_handle, msg_type_cls
+
+
+class TestWSCardMonkeyPatch:
+    """Test the _handle_data_frame monkey-patch for CARD messages."""
+
+    def test_patch_replaces_handle_data_frame(self):
+        """After _run_official_feishu_ws_client, _handle_data_frame should be patched."""
+        ws_client, original_handle, _ = _run_ws_client_with_patch()
+        ws_client.start.assert_called_once()
+        assert ws_client._handle_data_frame is not original_handle
+
+    @pytest.mark.asyncio
+    async def test_card_frame_calls_event_handler(self):
+        """A CARD frame should be routed through do_without_validation."""
+        ws_client, original_handle, _ = _run_ws_client_with_patch()
+        patched = ws_client._handle_data_frame
+
+        frame = _make_card_frame()
+        await patched(frame)
+
+        ws_client._event_handler.do_without_validation.assert_called_once_with(
+            b'{"test": "data"}'
+        )
+        ws_client._write_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_event_frame_delegates_to_original(self):
+        """A non-CARD frame should delegate to the original handler."""
+        ws_client, original_handle, _ = _run_ws_client_with_patch()
+        patched = ws_client._handle_data_frame
+
+        frame = _make_card_frame(msg_type="event")
+        await patched(frame)
+
+        original_handle.assert_called_once_with(frame)
+        ws_client._event_handler.do_without_validation.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_card_frame_handler_error_returns_500(self):
+        """If the card handler raises, the response should still be written."""
+        ws_client, _, _ = _run_ws_client_with_patch()
+        ws_client._event_handler.do_without_validation = MagicMock(
+            side_effect=RuntimeError("handler boom")
+        )
+        patched = ws_client._handle_data_frame
+
+        frame = _make_card_frame()
+        await patched(frame)
+
+        ws_client._write_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_card_frame_multipart_combines(self):
+        """Multi-part CARD frames should be combined via _combine."""
+        combined_payload = b'{"combined": true}'
+        ws_client, _, _ = _run_ws_client_with_patch()
+        ws_client._combine = MagicMock(return_value=combined_payload)
+        patched = ws_client._handle_data_frame
+
+        original_payload = b'{"test": "data"}'
+        frame = _make_card_frame(sum_="3", seq="1", payload=original_payload)
+        await patched(frame)
+
+        ws_client._combine.assert_called_once_with("msg_card_001", 3, 1, original_payload)
+        ws_client._event_handler.do_without_validation.assert_called_once_with(combined_payload)
+
+    @pytest.mark.asyncio
+    async def test_card_frame_multipart_incomplete_returns_early(self):
+        """If _combine returns None (waiting for more parts), handler returns early."""
+        ws_client, _, _ = _run_ws_client_with_patch()
+        ws_client._combine = MagicMock(return_value=None)
+        patched = ws_client._handle_data_frame
+
+        frame = _make_card_frame(sum_="3", seq="1")
+        await patched(frame)
+
+        ws_client._event_handler.do_without_validation.assert_not_called()
+        ws_client._write_message.assert_not_called()

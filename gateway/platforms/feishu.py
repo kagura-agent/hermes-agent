@@ -1010,6 +1010,95 @@ def _run_official_feishu_ws_client(ws_client: Any, adapter: Any) -> None:
     if original_configure is not None:
         setattr(ws_client, "_configure", _configure_with_overrides)
     _apply_runtime_ws_overrides()
+
+    # ------------------------------------------------------------------
+    # Monkey-patch: fix lark-oapi SDK silently dropping CARD callbacks.
+    # The SDK's _handle_data_frame returns early for MessageType.CARD
+    # instead of routing it through do_without_validation like EVENT.
+    # This causes Feishu error 200340 for interactive card actions
+    # (e.g. approval buttons) in WebSocket mode.
+    # ------------------------------------------------------------------
+    try:
+        import base64 as _b64
+        import http as _http
+        import time as _time
+
+        from lark_oapi.core.const import UTF_8 as _UTF_8
+        from lark_oapi.core.json import JSON as _JSON
+        from lark_oapi.ws.const import (
+            HEADER_BIZ_RT as _HEADER_BIZ_RT,
+            HEADER_MESSAGE_ID as _HEADER_MESSAGE_ID,
+            HEADER_SEQ as _HEADER_SEQ,
+            HEADER_SUM as _HEADER_SUM,
+            HEADER_TRACE_ID as _HEADER_TRACE_ID,
+            HEADER_TYPE as _HEADER_TYPE,
+        )
+        from lark_oapi.ws.enum import MessageType as _LarkWsMsgType
+        from lark_oapi.ws.model import Response as _WsResponse
+
+        # Keep a reference to the original for non-CARD frames
+        _original_handle = ws_client._handle_data_frame
+
+        # Local helper mirroring SDK's _get_by_key
+        def _get_hdr(headers, key):  # type: ignore[no-untyped-def]
+            for h in headers:
+                if h.key == key:
+                    return h.value
+            return None
+
+        async def _patched_handle_data_frame(frame):  # type: ignore[no-untyped-def]
+            hs = frame.headers
+            type_ = _get_hdr(hs, _HEADER_TYPE)
+            if type_ is None or _LarkWsMsgType(type_) != _LarkWsMsgType.CARD:
+                # Not a CARD frame — delegate to original handler
+                return await _original_handle(frame)
+
+            # --- Handle CARD the same way the SDK handles EVENT ---
+            msg_id = _get_hdr(hs, _HEADER_MESSAGE_ID)
+            trace_id = _get_hdr(hs, _HEADER_TRACE_ID)
+            sum_ = _get_hdr(hs, _HEADER_SUM)
+            seq = _get_hdr(hs, _HEADER_SEQ)
+
+            pl = frame.payload
+            if int(sum_) > 1:
+                pl = ws_client._combine(msg_id, int(sum_), int(seq), pl)
+                if pl is None:
+                    return
+
+            logger.info(
+                "[Feishu] WS card action callback received (message_id=%s, trace_id=%s)",
+                msg_id, trace_id,
+            )
+
+            resp = _WsResponse(code=_http.HTTPStatus.OK)
+            try:
+                start = int(round(_time.time() * 1000))
+                result = ws_client._event_handler.do_without_validation(pl)
+                end = int(round(_time.time() * 1000))
+                header = hs.add()
+                header.key = _HEADER_BIZ_RT
+                header.value = str(end - start)
+                if result is not None:
+                    resp.data = _b64.b64encode(_JSON.marshal(result).encode(_UTF_8))
+            except Exception as exc:
+                logger.error(
+                    "[Feishu] WS card action handler failed (message_id=%s, trace_id=%s): %s",
+                    msg_id, trace_id, exc,
+                )
+                resp = _WsResponse(code=_http.HTTPStatus.INTERNAL_SERVER_ERROR)
+
+            frame.payload = _JSON.marshal(resp).encode(_UTF_8)
+            await ws_client._write_message(frame.SerializeToString())
+
+        ws_client._handle_data_frame = _patched_handle_data_frame
+        logger.debug("[Feishu] Patched WS client _handle_data_frame for CARD callback support")
+    except Exception:
+        logger.warning(
+            "[Feishu] Failed to patch WS client for CARD callbacks; "
+            "interactive card actions may not work in WebSocket mode",
+            exc_info=True,
+        )
+
     try:
         ws_client.start()
     except Exception:
