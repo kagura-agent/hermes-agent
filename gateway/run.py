@@ -3984,15 +3984,28 @@ class GatewayRunner:
             # Watch events and completions share the same queue; completions are
             # already handled by the per-process watcher task above, so we only
             # inject watch-type events here.
+            #
+            # IMPORTANT: Only inject events whose session_key matches the
+            # current thread's session_key.  Events for other threads are
+            # re-queued so they get delivered when the correct thread is
+            # next active.  This prevents cross-thread bleed (#10411).
             try:
                 from tools.process_registry import process_registry as _pr
                 _watch_events = []
+                _requeue_events = []
                 while not _pr.completion_queue.empty():
                     evt = _pr.completion_queue.get_nowait()
                     evt_type = evt.get("type", "completion")
                     if evt_type in ("watch_match", "watch_disabled"):
-                        _watch_events.append(evt)
+                        evt_session_key = str(evt.get("session_key") or "").strip()
+                        if not evt_session_key or evt_session_key == session_key:
+                            _watch_events.append(evt)
+                        else:
+                            _requeue_events.append(evt)
                     # else: completion events are handled by the watcher task
+                # Re-queue events that belong to other sessions/threads
+                for evt in _requeue_events:
+                    _pr.completion_queue.put(evt)
                 for evt in _watch_events:
                     synth_text = _format_gateway_process_notification(evt)
                     if synth_text:
