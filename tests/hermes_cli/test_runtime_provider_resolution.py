@@ -1412,3 +1412,32 @@ def test_named_custom_runtime_no_model_when_absent(monkeypatch):
 
     resolved = rp.resolve_runtime_provider(requested="my-server")
     assert "model" not in resolved
+
+
+def test_copilot_pool_entry_provides_default_base_url(monkeypatch):
+    """Copilot pool entry with no base_url should fall back to DEFAULT_GITHUB_MODELS_BASE_URL (#10223)."""
+
+    class _Entry:
+        runtime_api_key = "gho_test_token"
+        access_token = "gho_test_token"
+        source = "manual:gh_auth"
+        base_url = None
+        runtime_base_url = None
+
+    class _Pool:
+        def has_credentials(self):
+            return True
+
+        def select(self):
+            return _Entry()
+
+    monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "copilot")
+    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "_get_model_config", lambda: {"provider": "copilot", "default": "gpt-4o"})
+
+    resolved = rp.resolve_runtime_provider(requested="copilot")
+
+    assert resolved["provider"] == "copilot"
+    assert resolved["base_url"] == "https://api.githubcopilot.com"
+    assert resolved["api_key"] == "gho_test_token"
+    assert resolved["source"] == "manual:gh_auth"
