@@ -53,6 +53,53 @@ class TestPlatformConfigRoundtrip:
         assert restored.token is None
 
 
+class TestPlatformConfigUnknownKeysPassthrough:
+    """Unknown top-level keys in a platform block should be forwarded to extra."""
+
+    def test_unknown_keys_land_in_extra(self):
+        pc = PlatformConfig.from_dict({"enabled": True, "port": 9100, "host": "0.0.0.0"})
+        assert pc.enabled is True
+        assert pc.extra["port"] == 9100
+        assert pc.extra["host"] == "0.0.0.0"
+
+    def test_explicit_extra_takes_priority_over_top_level(self):
+        pc = PlatformConfig.from_dict({
+            "enabled": True,
+            "port": 9100,
+            "extra": {"port": 8080, "secret": "s3cret"},
+        })
+        assert pc.extra["port"] == 8080  # explicit extra wins
+        assert pc.extra["secret"] == "s3cret"
+
+    def test_unknown_keys_merged_with_explicit_extra(self):
+        pc = PlatformConfig.from_dict({
+            "enabled": True,
+            "host": "0.0.0.0",
+            "extra": {"secret": "s3cret"},
+        })
+        assert pc.extra == {"host": "0.0.0.0", "secret": "s3cret"}
+
+    def test_no_unknown_keys_still_works(self):
+        pc = PlatformConfig.from_dict({"enabled": True, "token": "tok"})
+        assert pc.extra == {}
+
+    def test_known_keys_not_duplicated_in_extra(self):
+        pc = PlatformConfig.from_dict({
+            "enabled": True,
+            "token": "tok",
+            "api_key": "ak",
+            "reply_to_mode": "all",
+        })
+        for key in ("enabled", "token", "api_key", "reply_to_mode"):
+            assert key not in pc.extra
+
+    def test_roundtrip_preserves_unknown_keys_via_extra(self):
+        """to_dict() puts unknown keys inside extra, so from_dict(to_dict()) keeps them."""
+        original = PlatformConfig.from_dict({"enabled": True, "port": 9100})
+        restored = PlatformConfig.from_dict(original.to_dict())
+        assert restored.extra["port"] == 9100
+
+
 class TestGetConnectedPlatforms:
     def test_returns_enabled_with_token(self):
         config = GatewayConfig(

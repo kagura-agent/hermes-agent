@@ -176,14 +176,18 @@ class PlatformConfig:
         home_channel = None
         if "home_channel" in data:
             home_channel = HomeChannel.from_dict(data["home_channel"])
-        
+
+        _KNOWN_KEYS = {"enabled", "token", "api_key", "home_channel", "reply_to_mode", "extra"}
+        unknown = {k: v for k, v in data.items() if k not in _KNOWN_KEYS}
+        extra = {**unknown, **data.get("extra", {})}
+
         return cls(
             enabled=data.get("enabled", False),
             token=data.get("token"),
             api_key=data.get("api_key"),
             home_channel=home_channel,
             reply_to_mode=data.get("reply_to_mode", "first"),
-            extra=data.get("extra", {}),
+            extra=extra,
         )
 
 
