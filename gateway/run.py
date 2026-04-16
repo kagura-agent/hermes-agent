@@ -7319,6 +7319,7 @@ class GatewayRunner:
             platform=context.source.platform.value,
             chat_id=context.source.chat_id,
             chat_name=context.source.chat_name or "",
+            chat_type=context.source.chat_type or "",
             thread_id=str(context.source.thread_id) if context.source.thread_id else "",
             user_id=str(context.source.user_id) if context.source.user_id else "",
             user_name=str(context.source.user_name) if context.source.user_name else "",
@@ -7487,9 +7488,18 @@ class GatewayRunner:
     def _build_process_event_source(self, evt: dict):
         """Resolve the canonical source for a synthetic background-process event.
 
-        Prefer the persisted session-store origin for the event's session key.
-        Falling back to the currently active foreground event is what causes
-        cross-topic bleed, so don't do that.
+        The event dict carries routing metadata (platform, chat_id, chat_type,
+        thread_id) captured when the background process was spawned.  These
+        fields must take priority because they identify the specific thread
+        that started the process.
+
+        The session-store origin is NOT used: in shared sessions (e.g.
+        group/channel with multiple threads), the origin may point to a
+        *different* thread than the one that launched the process, causing
+        cross-thread notification bleed (see #10411).
+
+        Fallback: parse the session key for platform/chat_type/chat_id when
+        the event dict is incomplete.
         """
         from gateway.session import SessionSource
 
@@ -7499,18 +7509,6 @@ class GatewayRunner:
         derived_chat_id = ""
 
         if session_key:
-            try:
-                self.session_store._ensure_loaded()
-                entry = self.session_store._entries.get(session_key)
-                if entry and getattr(entry, "origin", None):
-                    return entry.origin
-            except Exception as exc:
-                logger.debug(
-                    "Synthetic process-event session-store lookup failed for %s: %s",
-                    session_key,
-                    exc,
-                )
-
             _parsed = _parse_session_key(session_key)
             if _parsed:
                 derived_platform = _parsed["platform"]
@@ -7600,6 +7598,7 @@ class GatewayRunner:
         session_key = watcher.get("session_key", "")
         platform_name = watcher.get("platform", "")
         chat_id = watcher.get("chat_id", "")
+        chat_type = watcher.get("chat_type", "")
         thread_id = watcher.get("thread_id", "")
         user_id = watcher.get("user_id", "")
         user_name = watcher.get("user_name", "")
@@ -7650,6 +7649,7 @@ class GatewayRunner:
                         "session_key": session_key,
                         "platform": platform_name,
                         "chat_id": chat_id,
+                        "chat_type": chat_type,
                         "thread_id": thread_id,
                         "user_id": user_id,
                         "user_name": user_name,

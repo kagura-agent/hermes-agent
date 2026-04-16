@@ -1393,11 +1393,13 @@ def terminal_tool(
                     _gw_platform = _gse("HERMES_SESSION_PLATFORM", "")
                     if _gw_platform:
                         _gw_chat_id = _gse("HERMES_SESSION_CHAT_ID", "")
+                        _gw_chat_type = _gse("HERMES_SESSION_CHAT_TYPE", "")
                         _gw_thread_id = _gse("HERMES_SESSION_THREAD_ID", "")
                         _gw_user_id = _gse("HERMES_SESSION_USER_ID", "")
                         _gw_user_name = _gse("HERMES_SESSION_USER_NAME", "")
                         proc_session.watcher_platform = _gw_platform
                         proc_session.watcher_chat_id = _gw_chat_id
+                        proc_session.watcher_chat_type = _gw_chat_type
                         proc_session.watcher_user_id = _gw_user_id
                         proc_session.watcher_user_name = _gw_user_name
                         proc_session.watcher_thread_id = _gw_thread_id
@@ -1418,6 +1420,7 @@ def terminal_tool(
                             "session_key": session_key,
                             "platform": proc_session.watcher_platform,
                             "chat_id": proc_session.watcher_chat_id,
+                            "chat_type": proc_session.watcher_chat_type,
                             "user_id": proc_session.watcher_user_id,
                             "user_name": proc_session.watcher_user_name,
                             "thread_id": proc_session.watcher_thread_id,

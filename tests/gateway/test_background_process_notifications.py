@@ -246,25 +246,21 @@ async def test_no_thread_id_sends_no_metadata(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_inject_watch_notification_routes_from_session_store_origin(monkeypatch, tmp_path):
-    from gateway.session import SessionSource
-
+async def test_inject_watch_notification_routes_from_event_metadata(monkeypatch, tmp_path):
+    """Watch notification routes using the event dict's routing metadata,
+    not the session store origin."""
     runner = _build_runner(monkeypatch, tmp_path, "all")
     adapter = runner.adapters[Platform.TELEGRAM]
-    runner.session_store._entries["agent:main:telegram:group:-100:42"] = SimpleNamespace(
-        origin=SessionSource(
-            platform=Platform.TELEGRAM,
-            chat_id="-100",
-            chat_type="group",
-            thread_id="42",
-            user_id="123",
-            user_name="Emiliyan",
-        )
-    )
 
     evt = {
         "session_id": "proc_watch",
         "session_key": "agent:main:telegram:group:-100:42",
+        "platform": "telegram",
+        "chat_id": "-100",
+        "chat_type": "group",
+        "thread_id": "42",
+        "user_id": "123",
+        "user_name": "Emiliyan",
     }
 
     await runner._inject_watch_notification("[SYSTEM: Background process matched]", evt)
@@ -305,36 +301,43 @@ def test_build_process_event_source_falls_back_to_session_key_chat_type(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_inject_watch_notification_ignores_foreground_event_source(monkeypatch, tmp_path):
-    """Negative test: watch notification must NOT route to the foreground thread."""
+async def test_inject_watch_notification_uses_event_thread_not_session_origin(monkeypatch, tmp_path):
+    """The notification must route to the thread stored on the event (process
+    spawn time), even if the session store's origin points elsewhere."""
     from gateway.session import SessionSource
 
     runner = _build_runner(monkeypatch, tmp_path, "all")
     adapter = runner.adapters[Platform.TELEGRAM]
 
-    # Session store has the process's original thread (thread 42)
+    # Session store has a *different* thread (thread 99) as origin
     runner.session_store._entries["agent:main:telegram:group:-100:42"] = SimpleNamespace(
         origin=SessionSource(
             platform=Platform.TELEGRAM,
             chat_id="-100",
             chat_type="group",
-            thread_id="42",
-            user_id="proc_owner",
-            user_name="alice",
+            thread_id="99",
+            user_id="wrong_user",
+            user_name="bob",
         )
     )
 
-    # The evt dict carries the correct session_key — NOT a foreground event
+    # The event carries the correct routing from when the process was spawned
     evt = {
         "session_id": "proc_cross_thread",
         "session_key": "agent:main:telegram:group:-100:42",
+        "platform": "telegram",
+        "chat_id": "-100",
+        "chat_type": "group",
+        "thread_id": "42",
+        "user_id": "proc_owner",
+        "user_name": "alice",
     }
 
     await runner._inject_watch_notification("[SYSTEM: watch match]", evt)
 
     adapter.handle_message.assert_awaited_once()
     synth_event = adapter.handle_message.await_args.args[0]
-    # Must route to thread 42 (process origin), NOT some other thread
+    # Must route to thread 42 (event metadata), NOT thread 99 (session origin)
     assert synth_event.source.thread_id == "42"
     assert synth_event.source.user_id == "proc_owner"
 
@@ -414,3 +417,96 @@ def test_parse_session_key_too_short():
 def test_parse_session_key_wrong_prefix():
     assert _parse_session_key("cron:main:telegram:dm:123") is None
     assert _parse_session_key("agent:cron:telegram:dm:123") is None
+
+
+# ---------------------------------------------------------------------------
+# watch_match event routing (end-to-end through ProcessSession) — #10411
+# ---------------------------------------------------------------------------
+
+def test_process_session_watch_match_includes_chat_type():
+    """watch_match events in the completion queue must include chat_type."""
+    import queue
+    from tools.process_registry import ProcessRegistry, ProcessSession
+
+    registry = ProcessRegistry()
+    registry.completion_queue = queue.Queue()
+
+    session = ProcessSession(
+        id="proc_test123",
+        command="sleep 99",
+        session_key="agent:main:discord:channel:chan1:thread42",
+        watcher_platform="discord",
+        watcher_chat_id="chan1",
+        watcher_chat_type="channel",
+        watcher_thread_id="thread42",
+        watcher_user_id="user1",
+        watcher_user_name="alice",
+        watch_patterns=["READY"],
+    )
+
+    # Simulate output that triggers a watch match
+    registry._check_watch_patterns(session, "server is READY\n")
+
+    assert not registry.completion_queue.empty()
+    evt = registry.completion_queue.get_nowait()
+    assert evt["type"] == "watch_match"
+    assert evt["platform"] == "discord"
+    assert evt["chat_id"] == "chan1"
+    assert evt["chat_type"] == "channel"
+    assert evt["thread_id"] == "thread42"
+    assert evt["user_id"] == "user1"
+
+
+def test_build_process_event_source_prefers_event_metadata_over_session_store(monkeypatch, tmp_path):
+    """Event dict routing fields must take priority over session store origin (#10411)."""
+    from gateway.session import SessionSource
+
+    runner = _build_runner(monkeypatch, tmp_path, "all")
+
+    # Session store origin points to thread 99 (stale/wrong)
+    runner.session_store._entries["agent:main:discord:channel:chan1:thread42"] = SimpleNamespace(
+        origin=SessionSource(
+            platform=Platform("discord"),
+            chat_id="chan1",
+            chat_type="channel",
+            thread_id="99",
+            user_id="wrong_user",
+        )
+    )
+
+    evt = {
+        "session_id": "proc_test",
+        "session_key": "agent:main:discord:channel:chan1:thread42",
+        "platform": "discord",
+        "chat_id": "chan1",
+        "chat_type": "channel",
+        "thread_id": "thread42",
+        "user_id": "correct_user",
+        "user_name": "alice",
+    }
+
+    source = runner._build_process_event_source(evt)
+
+    assert source is not None
+    assert source.thread_id == "thread42"  # From event, not "99" from session store
+    assert source.user_id == "correct_user"
+    assert source.chat_type == "channel"
+
+
+def test_build_process_event_source_uses_event_chat_type(monkeypatch, tmp_path):
+    """chat_type from the event dict is used directly."""
+    runner = _build_runner(monkeypatch, tmp_path, "all")
+
+    evt = {
+        "session_id": "proc_ct",
+        "platform": "telegram",
+        "chat_id": "-100",
+        "chat_type": "group",
+        "thread_id": "42",
+    }
+
+    source = runner._build_process_event_source(evt)
+
+    assert source is not None
+    assert source.chat_type == "group"
+    assert source.thread_id == "42"
