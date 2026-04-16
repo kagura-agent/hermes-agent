@@ -238,3 +238,14 @@ class TestExchangeAuthCode:
         assert setup_module.TOKEN_PATH.exists()
         # Pending auth is cleaned up
         assert not setup_module.PENDING_AUTH_PATH.exists()
+
+    def test_token_includes_type_authorized_user(self, setup_module):
+        """exchange_auth_code writes 'type': 'authorized_user' into the token (#10913)."""
+        setup_module.PENDING_AUTH_PATH.write_text(
+            json.dumps({"state": "saved-state", "code_verifier": "saved-verifier"})
+        )
+
+        setup_module.exchange_auth_code("4/test-auth-code")
+
+        saved = json.loads(setup_module.TOKEN_PATH.read_text())
+        assert saved.get("type") == "authorized_user"

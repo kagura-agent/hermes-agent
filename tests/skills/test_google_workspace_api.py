@@ -182,3 +182,52 @@ def test_api_calendar_list_respects_date_range(api_module):
     params = json.loads(cmd[params_idx + 1])
     assert params["timeMin"] == "2026-04-01T00:00:00Z"
     assert params["timeMax"] == "2026-04-07T23:59:59Z"
+
+
+def test_get_credentials_normalizes_missing_type(api_module, tmp_path):
+    """get_credentials adds 'type': 'authorized_user' when missing (#10913)."""
+    from unittest.mock import MagicMock
+
+    token_path = api_module.TOKEN_PATH
+    # Write a token WITHOUT the 'type' field (pre-fix setup.py output)
+    token_data = {
+        "token": "ya29.test",
+        "refresh_token": "1//refresh",
+        "client_id": "123.apps.googleusercontent.com",
+        "client_secret": "secret",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
+    }
+    token_path.write_text(json.dumps(token_data))
+
+    fake_creds = MagicMock()
+    fake_creds.expired = False
+    fake_creds.valid = True
+
+    # Inject fake google.oauth2.credentials module (not installed in CI)
+    fake_mod = types.ModuleType("google.oauth2.credentials")
+    fake_mod.Credentials = MagicMock()
+    fake_mod.Credentials.from_authorized_user_file = MagicMock(return_value=fake_creds)
+    fake_req_mod = types.ModuleType("google.auth.transport.requests")
+    fake_req_mod.Request = MagicMock
+
+    orig = dict(sys.modules)
+    sys.modules.setdefault("google", types.ModuleType("google"))
+    sys.modules.setdefault("google.oauth2", types.ModuleType("google.oauth2"))
+    sys.modules["google.oauth2.credentials"] = fake_mod
+    sys.modules.setdefault("google.auth", types.ModuleType("google.auth"))
+    sys.modules.setdefault("google.auth.transport", types.ModuleType("google.auth.transport"))
+    sys.modules["google.auth.transport.requests"] = fake_req_mod
+    try:
+        api_module._ensure_authenticated = lambda: None
+        api_module.get_credentials()
+    finally:
+        # Restore only the modules we added
+        for key in list(sys.modules):
+            if key not in orig:
+                del sys.modules[key]
+
+    # Token file should now contain 'type'
+    saved = json.loads(token_path.read_text())
+    assert saved["type"] == "authorized_user"
+

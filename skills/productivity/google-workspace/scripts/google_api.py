@@ -167,6 +167,12 @@ def get_credentials():
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
 
+    # Normalize tokens written before the 'type' field fix (#10913).
+    raw = json.loads(TOKEN_PATH.read_text())
+    if raw.get("type") != "authorized_user":
+        raw["type"] = "authorized_user"
+        TOKEN_PATH.write_text(json.dumps(raw, indent=2))
+
     creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), _stored_token_scopes())
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())

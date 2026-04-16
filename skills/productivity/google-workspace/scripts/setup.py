@@ -315,6 +315,10 @@ def exchange_auth_code(code: str):
     creds = flow.credentials
     token_payload = json.loads(creds.to_json())
 
+    # Ensure 'type' is present — google.oauth2.Credentials.from_authorized_user_file
+    # requires it, but creds.to_json() does not always include it.
+    token_payload.setdefault("type", "authorized_user")
+
     # Store only the scopes actually granted by the user, not what was requested.
     # creds.to_json() writes the requested scopes, which causes refresh to fail
     # with invalid_scope if the user only authorized a subset.
