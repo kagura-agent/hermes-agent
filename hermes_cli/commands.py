@@ -912,7 +912,10 @@ class SlashCommandCompleter(Completer):
 
         # Bare @ or @partial — fuzzy project-wide file search
         query = word[1:]  # strip the @
-        yield from self._fuzzy_file_completions(word, query, limit)
+        # Limit bare @ to fewer results to avoid overwhelming the
+        # completion menu and causing rendering issues (#10428).
+        file_limit = 10 if not query else limit
+        yield from self._fuzzy_file_completions(word, query, file_limit)
 
     def _get_project_files(self) -> list[str]:
         """Return cached list of project files (refreshed every 5s)."""
@@ -921,7 +924,7 @@ class SlashCommandCompleter(Completer):
         if (
             self._file_cache
             and self._file_cache_cwd == cwd
-            and now - self._file_cache_time < 5.0
+            and now - self._file_cache_time < 30.0
         ):
             return self._file_cache
 
@@ -1000,6 +1003,30 @@ class SlashCommandCompleter(Completer):
             return 25
         return 0
 
+    @staticmethod
+    def _truncate_path(filepath: str, max_len: int = 50) -> str:
+        """Truncate a long path for display, keeping the filename visible."""
+        if len(filepath) <= max_len:
+            return filepath
+        filename = os.path.basename(filepath)
+        # Reserve space for filename + ellipsis + separator
+        if len(filename) + 5 >= max_len:
+            return "…/" + filename
+        budget = max_len - len(filename) - 4  # 4 = len("…/" + "/")
+        dirpart = os.path.dirname(filepath)
+        # Keep the rightmost directory components that fit
+        parts = dirpart.split("/")
+        kept: list[str] = []
+        total = 0
+        for p in reversed(parts):
+            if total + len(p) + 1 > budget:
+                break
+            kept.insert(0, p)
+            total += len(p) + 1
+        if kept:
+            return "…/" + "/".join(kept) + "/" + filename
+        return "…/" + filename
+
     def _fuzzy_file_completions(self, word: str, query: str, limit: int = 20):
         """Yield fuzzy file completions for bare @query."""
         files = self._get_project_files()
@@ -1013,11 +1040,12 @@ class SlashCommandCompleter(Completer):
                 meta = "dir" if is_dir else _file_size_label(
                     os.path.join(os.getcwd(), fp)
                 )
+                display_meta = self._truncate_path(fp)
                 yield Completion(
                     f"@{kind}:{fp}",
                     start_position=-len(word),
                     display=filename,
-                    display_meta=meta,
+                    display_meta=display_meta,
                 )
             return
 
@@ -1036,11 +1064,13 @@ class SlashCommandCompleter(Completer):
             meta = "dir" if is_dir else _file_size_label(
                 os.path.join(os.getcwd(), fp)
             )
+            truncated = self._truncate_path(fp)
+            display_meta = f"{truncated}  {meta}" if meta else truncated
             yield Completion(
                 f"@{kind}:{fp}",
                 start_position=-len(word),
                 display=filename,
-                display_meta=f"{fp}  {meta}" if meta else fp,
+                display_meta=display_meta,
             )
 
     def _model_completions(self, sub_text: str, sub_lower: str):
