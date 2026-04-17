@@ -672,3 +672,93 @@ def test_register_skill_group_handler_dispatches_command(adapter):
     # The callback name should reflect the skill
     assert "gif_search" in gif_cmd.callback.__name__
 
+
+# ------------------------------------------------------------------
+# Size limit enforcement (_enforce_command_group_size)
+# ------------------------------------------------------------------
+
+
+class TestEnforceCommandGroupSize:
+    """Tests for the Discord 8000-char command group size limit."""
+
+    def _make_entries(self, n, desc_len=80):
+        """Create *n* skill tuples with descriptions of *desc_len* chars."""
+        return [
+            (f"skill-{i}", "d" * desc_len, f"/skill-{i}")
+            for i in range(n)
+        ]
+
+    def test_small_group_unchanged(self):
+        """Groups well under the limit should pass through unchanged."""
+        from hermes_cli.commands import _enforce_command_group_size
+
+        cats = {"cat-a": self._make_entries(3, desc_len=50)}
+        uncat = self._make_entries(2, desc_len=50)
+        new_cats, new_uncat, hidden = _enforce_command_group_size(
+            cats, uncat, max_size=8000,
+        )
+        assert hidden == 0
+        assert len(new_cats["cat-a"]) == 3
+        assert len(new_uncat) == 2
+        # Descriptions should be untouched
+        assert new_cats["cat-a"][0][1] == "d" * 50
+
+    def test_descriptions_truncated_when_over_limit(self):
+        """Descriptions should be progressively shortened to fit."""
+        from hermes_cli.commands import _enforce_command_group_size, _estimate_group_size
+
+        cats = {f"cat-{c}": self._make_entries(10, desc_len=100) for c in range(5)}
+        uncat = []
+        # Ensure it's actually over the limit
+        assert _estimate_group_size(cats, uncat) > 4000
+
+        new_cats, new_uncat, hidden = _enforce_command_group_size(
+            cats, uncat, max_size=4000,
+        )
+        # All descriptions should now be ≤60 chars (or ≤40 if needed)
+        for entries in new_cats.values():
+            for _name, desc, _key in entries:
+                assert len(desc) <= 60
+
+    def test_commands_dropped_when_truncation_insufficient(self):
+        """Commands should be dropped from largest category if truncation isn't enough."""
+        from hermes_cli.commands import _enforce_command_group_size
+
+        # Create a very tight limit that can't fit everything even with short descs
+        cats = {"big": self._make_entries(20, desc_len=40)}
+        uncat = []
+        new_cats, new_uncat, hidden = _enforce_command_group_size(
+            cats, uncat, max_size=1500,
+        )
+        assert hidden > 0
+        total_remaining = sum(len(v) for v in new_cats.values()) + len(new_uncat)
+        assert total_remaining < 20
+
+    def test_estimate_group_size_basic(self):
+        """_estimate_group_size should return a positive integer."""
+        from hermes_cli.commands import _estimate_group_size
+
+        cats = {"media": [("gif-search", "Search for GIFs", "/gif-search")]}
+        uncat = [("dogfood", "QA testing", "/dogfood")]
+        size = _estimate_group_size(cats, uncat)
+        assert size > 0
+        assert isinstance(size, int)
+
+    def test_enforce_integration_with_registration(self, adapter):
+        """End-to-end: oversized skill set should still register without error."""
+        mock_categories = {
+            f"cat-{c}": [
+                (f"s-{c}-{i}", "x" * 100, f"/s-{c}-{i}")
+                for i in range(10)
+            ]
+            for c in range(5)
+        }
+        with patch(
+            "hermes_cli.commands.discord_skill_commands_by_category",
+            return_value=(mock_categories, [], 0),
+        ):
+            adapter._register_slash_commands()
+
+        tree = adapter._client.tree
+        assert "skill" in tree.commands
+

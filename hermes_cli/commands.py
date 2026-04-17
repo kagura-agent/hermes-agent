@@ -583,6 +583,90 @@ def discord_skill_commands(
     )
 
 
+# ── Discord command group size enforcement ─────────────────────────────
+# Discord imposes an 8000-character limit on the serialized JSON payload
+# of a single command group.  When the /skill group grows too large we
+# must shrink it — first by truncating descriptions, then by dropping
+# commands from the largest categories.
+
+_DISCORD_MAX_GROUP_SIZE = 8000
+
+# Conservative per-element overhead estimates (JSON keys, braces, option
+# metadata for the ``args`` parameter each handler declares).
+_CMD_FIXED_OVERHEAD = 155  # name/description/type/options envelope
+_GROUP_FIXED_OVERHEAD = 100  # category group envelope
+_TOP_GROUP_OVERHEAD = 100  # /skill group envelope
+
+
+def _estimate_group_size(
+    categories: dict[str, list[tuple[str, str, str]]],
+    uncategorized: list[tuple[str, str, str]],
+) -> int:
+    """Return an *estimated* JSON payload size for the ``/skill`` command group."""
+    size = _TOP_GROUP_OVERHEAD
+    for cat, entries in categories.items():
+        cat_desc = f"{cat.replace('-', ' ').title()} skills"
+        size += _GROUP_FIXED_OVERHEAD + len(cat) + len(cat_desc)
+        for name, desc, _key in entries:
+            size += _CMD_FIXED_OVERHEAD + len(name) + len(desc)
+    for name, desc, _key in uncategorized:
+        size += _CMD_FIXED_OVERHEAD + len(name) + len(desc)
+    return size
+
+
+def _enforce_command_group_size(
+    categories: dict[str, list[tuple[str, str, str]]],
+    uncategorized: list[tuple[str, str, str]],
+    max_size: int = _DISCORD_MAX_GROUP_SIZE,
+) -> tuple[dict[str, list[tuple[str, str, str]]], list[tuple[str, str, str]], int]:
+    """Shrink the skill group to fit within *max_size* characters.
+
+    Strategy (applied in order until the group fits):
+    1. Truncate all descriptions to 60 chars.
+    2. Truncate all descriptions to 40 chars.
+    3. Drop commands from the largest categories until it fits.
+
+    Returns ``(categories, uncategorized, hidden_count)``.
+    """
+    hidden = 0
+
+    # Phase 1 & 2: progressively shorten descriptions
+    for limit in (60, 40):
+        if _estimate_group_size(categories, uncategorized) <= max_size:
+            break
+
+        def _trunc(entries: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+            out = []
+            for n, d, k in entries:
+                if len(d) > limit:
+                    d = d[: limit - 3] + "..."
+                out.append((n, d, k))
+            return out
+
+        categories = {cat: _trunc(entries) for cat, entries in categories.items()}
+        uncategorized = _trunc(uncategorized)
+
+    # Phase 3: drop commands from largest categories
+    while _estimate_group_size(categories, uncategorized) > max_size:
+        if not categories and not uncategorized:
+            break
+        # Find the largest category
+        largest_cat = max(categories, key=lambda c: len(categories[c]), default=None)
+        largest_len = len(categories.get(largest_cat, [])) if largest_cat else 0
+        if largest_cat and largest_len > 0:
+            categories[largest_cat] = categories[largest_cat][:-1]
+            hidden += 1
+            if not categories[largest_cat]:
+                del categories[largest_cat]
+        elif uncategorized:
+            uncategorized = uncategorized[:-1]
+            hidden += 1
+        else:
+            break
+
+    return categories, uncategorized, hidden
+
+
 def discord_skill_commands_by_category(
     reserved_names: set[str],
 ) -> tuple[dict[str, list[tuple[str, str, str]]], list[tuple[str, str, str]], int]:
@@ -689,6 +773,12 @@ def discord_skill_commands_by_category(
     if len(uncategorized) > remaining_slots:
         hidden += len(uncategorized) - remaining_slots
         uncategorized = uncategorized[:remaining_slots]
+
+    # Enforce Discord 8000-char command group size limit --------------------
+    trimmed_categories, uncategorized, extra_hidden = _enforce_command_group_size(
+        trimmed_categories, uncategorized,
+    )
+    hidden += extra_hidden
 
     return trimmed_categories, uncategorized, hidden
 
