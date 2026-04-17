@@ -1353,12 +1353,15 @@ class ChatConsole:
 
     def __init__(self):
         from io import StringIO
+        import os
         self._buffer = StringIO()
+        no_color = os.environ.get("NO_COLOR") is not None
         self._inner = Console(
             file=self._buffer,
-            force_terminal=True,
-            color_system="truecolor",
+            force_terminal=not no_color,
+            color_system=None if no_color else "truecolor",
             highlight=False,
+            no_color=no_color,
         )
 
     def print(self, *args, **kwargs):
@@ -2169,7 +2172,7 @@ class HermesCLI:
                 if normalized_model and normalized_model != current_model:
                     if not self._model_is_default:
                         self.console.print(
-                            f"[yellow]⚠️  Normalized model '{current_model}' to '{normalized_model}' for {resolved_provider}.[/]"
+                            f"[dark_goldenrod]⚠️  Normalized model '{current_model}' to '{normalized_model}' for {resolved_provider}.[/]"
                         )
                     self.model = normalized_model
                     current_model = normalized_model
@@ -2185,7 +2188,7 @@ class HermesCLI:
                 if canonical and canonical != current_model:
                     if not self._model_is_default:
                         self.console.print(
-                            f"[yellow]⚠️  Normalized Copilot model '{current_model}' to '{canonical}'.[/]"
+                            f"[dark_goldenrod]⚠️  Normalized Copilot model '{current_model}' to '{canonical}'.[/]"
                         )
                     self.model = canonical
                     current_model = canonical
@@ -2207,7 +2210,7 @@ class HermesCLI:
                 if canonical and canonical != current_model:
                     if not self._model_is_default:
                         self.console.print(
-                            f"[yellow]⚠️  Stripped provider prefix from '{current_model}'; using '{canonical}' for {resolved_provider}.[/]"
+                            f"[dark_goldenrod]⚠️  Stripped provider prefix from '{current_model}'; using '{canonical}' for {resolved_provider}.[/]"
                         )
                     self.model = canonical
                     current_model = canonical
@@ -2229,7 +2232,7 @@ class HermesCLI:
             slug = current_model.split("/", 1)[1]
             if not self._model_is_default:
                 self.console.print(
-                    f"[yellow]⚠️  Stripped provider prefix from '{current_model}'; "
+                    f"[dark_goldenrod]⚠️  Stripped provider prefix from '{current_model}'; "
                     f"using '{slug}' for OpenAI Codex.[/]"
                 )
             self.model = slug
@@ -3004,7 +3007,7 @@ class HermesCLI:
         if ctx_len and ctx_len <= 8192:
             self.console.print()
             self.console.print(
-                f"[yellow]⚠️  Context length is only {ctx_len:,} tokens — "
+                f"[dark_goldenrod]⚠️  Context length is only {ctx_len:,} tokens — "
                 f"this is likely too low for agent use with tools.[/]"
             )
             self.console.print(
@@ -3031,7 +3034,7 @@ class HermesCLI:
         if is_nous_hermes_non_agentic(model_name):
             self.console.print()
             self.console.print(
-                "[bold yellow]⚠  Nous Research Hermes 3 & 4 models are NOT agentic and are not "
+                "[bold dark_goldenrod]⚠  Nous Research Hermes 3 & 4 models are NOT agentic and are not "
                 "designed for use with Hermes Agent.[/]"
             )
             self.console.print(
@@ -3638,7 +3641,7 @@ class HermesCLI:
             
             if api_key_missing:
                 self.console.print()
-                self.console.print("[yellow]⚠️  Some tools disabled (missing API keys):[/]")
+                self.console.print("[dark_goldenrod]⚠️  Some tools disabled (missing API keys):[/]")
                 for item in api_key_missing:
                     tools_str = ", ".join(item["tools"][:2])  # Show first 2 tools
                     if len(item["tools"]) > 2:
@@ -4936,7 +4939,7 @@ class HermesCLI:
         try:
             access_token = get_valid_access_token()
         except GoogleOAuthError as exc:
-            self.console.print(f"  [yellow]{exc}[/]")
+            self.console.print(f"  [dark_goldenrod]{exc}[/]")
             self.console.print("  Run [bold]/model[/] and pick 'Google Gemini (OAuth)' to sign in.")
             return
 

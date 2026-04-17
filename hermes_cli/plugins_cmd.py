@@ -144,7 +144,7 @@ def _copy_example_files(plugin_dir: Path, console) -> None:
                 )
             except OSError as e:
                 console.print(
-                    f"[yellow]Warning:[/yellow] Failed to copy {example_file.name}: {e}"
+                    f"[dark_goldenrod]Warning:[/dark_goldenrod] Failed to copy {example_file.name}: {e}"
                 )
 
 
@@ -297,7 +297,7 @@ def cmd_install(identifier: str, force: bool = False) -> None:
     # Warn about insecure / local URL schemes
     if git_url.startswith(("http://", "file://")):
         console.print(
-            "[yellow]Warning:[/yellow] Using insecure/local URL scheme. "
+            "[dark_goldenrod]Warning:[/dark_goldenrod] Using insecure/local URL scheme. "
             "Consider using https:// or git@ for production installs."
         )
 
@@ -376,7 +376,7 @@ def cmd_install(identifier: str, force: bool = False) -> None:
     # Validate it looks like a plugin
     if not (target / "plugin.yaml").exists() and not (target / "__init__.py").exists():
         console.print(
-            f"[yellow]Warning:[/yellow] {plugin_name} doesn't contain plugin.yaml "
+            f"[dark_goldenrod]Warning:[/dark_goldenrod] {plugin_name} doesn't contain plugin.yaml "
             f"or __init__.py. It may not be a valid Hermes plugin."
         )
 
@@ -531,7 +531,7 @@ def cmd_disable(name: str) -> None:
 
     disabled.add(name)
     _save_disabled_set(disabled)
-    console.print(f"[yellow]\u2298[/yellow] Plugin [bold]{name}[/bold] disabled. Takes effect on next session.")
+    console.print(f"[dark_goldenrod]\u2298[/dark_goldenrod] Plugin [bold]{name}[/bold] disabled. Takes effect on next session.")
 
 
 def cmd_list() -> None:
