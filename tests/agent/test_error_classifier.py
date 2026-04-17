@@ -849,3 +849,63 @@ class TestAdversarialEdgeCases:
         )
         result = classify_api_error(e, provider="openrouter")
         assert result.reason == FailoverReason.model_not_found
+
+    def test_dict_message_in_error_obj(self):
+        """body.error.message as dict (Pydantic validation) must not crash."""
+        e = MockAPIError(
+            "Bad request",
+            status_code=400,
+            body={"error": {"message": {"loc": ["body", "model"], "msg": "field required"}}},
+        )
+        result = classify_api_error(e, approx_tokens=1000)
+        # Should classify without raising — exact reason depends on heuristics
+        assert isinstance(result, ClassifiedError)
+
+    def test_dict_message_in_flat_body(self):
+        """body.message as dict (Pydantic validation) must not crash."""
+        e = MockAPIError(
+            "Bad request",
+            status_code=400,
+            body={"message": {"loc": ["body", "messages"], "msg": "value is not valid"}},
+        )
+        result = classify_api_error(e, approx_tokens=1000)
+        assert isinstance(result, ClassifiedError)
+
+    def test_dict_message_in_metadata_raw(self):
+        """metadata.raw inner error.message as dict must not crash."""
+        import json
+        e = MockAPIError(
+            "Provider returned error",
+            status_code=400,
+            body={
+                "error": {
+                    "message": "Provider returned error",
+                    "metadata": {
+                        "raw": json.dumps({"error": {"message": {"detail": "validation failed"}}})
+                    }
+                }
+            },
+        )
+        result = classify_api_error(e, provider="openrouter", approx_tokens=1000)
+        assert isinstance(result, ClassifiedError)
+
+    def test_dict_message_in_classify_400_error_obj(self):
+        """_classify_400 body.error.message as dict must not crash."""
+        e = MockAPIError(
+            "Error",
+            status_code=400,
+            body={"error": {"message": {"type": "missing", "msg": "Field required"}}},
+        )
+        # Large session to exercise the generic-400 heuristic path
+        result = classify_api_error(e, approx_tokens=100000, context_length=200000)
+        assert isinstance(result, ClassifiedError)
+
+    def test_dict_message_in_classify_400_flat_body(self):
+        """_classify_400 flat body.message as dict must not crash."""
+        e = MockAPIError(
+            "Error",
+            status_code=400,
+            body={"message": {"type": "missing", "msg": "Field required"}},
+        )
+        result = classify_api_error(e, approx_tokens=100000, context_length=200000)
+        assert isinstance(result, ClassifiedError)
