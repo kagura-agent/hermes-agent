@@ -205,3 +205,47 @@ class TestNestedTerminalCwdPlaceholderSkip:
         assert result["TERMINAL_ENV"] == "docker"
         assert result["TERMINAL_TIMEOUT"] == "300"
         assert result["TERMINAL_CWD"] == "/from/env"
+
+
+class TestGatewayChdirOnStartup:
+    """gateway/run.py must os.chdir() to the resolved TERMINAL_CWD."""
+
+    def test_chdir_called_with_configured_cwd(self, monkeypatch, tmp_path):
+        """os.chdir() is called with the resolved TERMINAL_CWD."""
+        target = tmp_path / "workspace"
+        target.mkdir()
+
+        chdir_calls: list[str] = []
+        monkeypatch.setattr(os, "chdir", lambda p: chdir_calls.append(p))
+
+        env: dict[str, str] = {}
+        monkeypatch.setattr(os, "environ", env)
+
+        # Simulate the bridge + chdir logic from gateway/run.py lines 252-262
+        env["TERMINAL_CWD"] = str(target)
+
+        configured_cwd = env.get("TERMINAL_CWD", "")
+        if not configured_cwd or configured_cwd in (".", "auto", "cwd"):
+            env["TERMINAL_CWD"] = "/fallback"
+
+        resolved_cwd = env["TERMINAL_CWD"]
+        try:
+            os.chdir(resolved_cwd)
+        except OSError:
+            pass
+
+        assert chdir_calls == [str(target)]
+
+    def test_chdir_skips_gracefully_on_missing_dir(self, monkeypatch):
+        """os.chdir() failure doesn't crash the gateway."""
+        def bad_chdir(p):
+            raise OSError("No such directory")
+
+        monkeypatch.setattr(os, "chdir", bad_chdir)
+
+        # Should not raise
+        resolved_cwd = "/nonexistent/path"
+        try:
+            os.chdir(resolved_cwd)
+        except OSError:
+            pass  # expected

@@ -254,6 +254,14 @@ if not _configured_cwd or _configured_cwd in (".", "auto", "cwd"):
     _fallback = os.getenv("MESSAGING_CWD") or str(Path.home())
     os.environ["TERMINAL_CWD"] = _fallback
 
+# Actually change the process working directory so that tools, agents,
+# and child processes all inherit the configured cwd.
+_resolved_cwd = os.environ["TERMINAL_CWD"]
+try:
+    os.chdir(_resolved_cwd)
+except OSError:
+    pass  # directory may not exist yet; TERMINAL_CWD env var still available
+
 from gateway.config import (
     Platform,
     GatewayConfig,

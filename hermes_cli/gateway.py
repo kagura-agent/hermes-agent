@@ -823,9 +823,9 @@ def _hermes_home_for_target_user(target_home_dir: str) -> str:
         return str(current_hermes)
 
 
-def generate_systemd_unit(system: bool = False, run_as_user: str | None = None) -> str:
+def generate_systemd_unit(system: bool = False, run_as_user: str | None = None, *, working_dir_override: str | None = None) -> str:
     python_path = get_python_path()
-    working_dir = str(PROJECT_ROOT)
+    working_dir = working_dir_override or str(PROJECT_ROOT)
     detected_venv = _detect_venv_dir()
     venv_dir = str(detected_venv) if detected_venv else str(PROJECT_ROOT / "venv")
     venv_bin = str(detected_venv / "bin") if detected_venv else str(PROJECT_ROOT / "venv" / "bin")
@@ -952,9 +952,32 @@ def systemd_unit_is_current(system: bool = False) -> bool:
 
     installed = unit_path.read_text(encoding="utf-8")
     expected_user = _read_systemd_user_from_unit(unit_path) if system else None
-    expected = generate_systemd_unit(system=system, run_as_user=expected_user)
+    preserved_wd = _read_working_directory_from_unit(unit_path)
+    expected = generate_systemd_unit(system=system, run_as_user=expected_user, working_dir_override=preserved_wd)
     return _normalize_service_definition(installed) == _normalize_service_definition(expected)
 
+
+
+def _read_working_directory_from_unit(unit_path: Path) -> str | None:
+    """Extract a user-customized WorkingDirectory from an installed systemd unit.
+
+    Returns the path only if it differs from PROJECT_ROOT (i.e. the user
+    customized it).  Returns ``None`` otherwise so the caller can fall back
+    to the default.
+    """
+    import re
+
+    try:
+        text = unit_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = re.search(r"^WorkingDirectory\s*=\s*(.+)$", text, re.MULTILINE)
+    if not m:
+        return None
+    wd = m.group(1).strip()
+    if wd == str(PROJECT_ROOT):
+        return None
+    return wd
 
 
 def refresh_systemd_unit_if_needed(system: bool = False) -> bool:
@@ -964,7 +987,8 @@ def refresh_systemd_unit_if_needed(system: bool = False) -> bool:
         return False
 
     expected_user = _read_systemd_user_from_unit(unit_path) if system else None
-    unit_path.write_text(generate_systemd_unit(system=system, run_as_user=expected_user), encoding="utf-8")
+    preserved_wd = _read_working_directory_from_unit(unit_path)
+    unit_path.write_text(generate_systemd_unit(system=system, run_as_user=expected_user, working_dir_override=preserved_wd), encoding="utf-8")
     _run_systemctl(["daemon-reload"], system=system, check=True, timeout=30)
     print(f"↻ Updated gateway {_service_scope_label(system)} service definition to match the current Hermes install")
     return True

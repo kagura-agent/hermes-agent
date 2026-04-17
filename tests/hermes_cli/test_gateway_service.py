@@ -18,7 +18,7 @@ class TestSystemdServiceRefresh:
         unit_path.write_text("old unit\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_cli, "get_systemd_unit_path", lambda system=False: unit_path)
-        monkeypatch.setattr(gateway_cli, "generate_systemd_unit", lambda system=False, run_as_user=None: "new unit\n")
+        monkeypatch.setattr(gateway_cli, "generate_systemd_unit", lambda system=False, run_as_user=None, **kw: "new unit\n")
 
         calls = []
 
@@ -41,7 +41,7 @@ class TestSystemdServiceRefresh:
         unit_path.write_text("old unit\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_cli, "get_systemd_unit_path", lambda system=False: unit_path)
-        monkeypatch.setattr(gateway_cli, "generate_systemd_unit", lambda system=False, run_as_user=None: "new unit\n")
+        monkeypatch.setattr(gateway_cli, "generate_systemd_unit", lambda system=False, run_as_user=None, **kw: "new unit\n")
 
         calls = []
 
@@ -64,7 +64,7 @@ class TestSystemdServiceRefresh:
         unit_path.write_text("old unit\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_cli, "get_systemd_unit_path", lambda system=False: unit_path)
-        monkeypatch.setattr(gateway_cli, "generate_systemd_unit", lambda system=False, run_as_user=None: "new unit\n")
+        monkeypatch.setattr(gateway_cli, "generate_systemd_unit", lambda system=False, run_as_user=None, **kw: "new unit\n")
 
         calls = []
 
@@ -1146,3 +1146,100 @@ class TestDockerAwareGateway:
         out = capsys.readouterr().out
         assert "docker" in out.lower()
         assert "hermes gateway run" in out
+
+
+class TestWorkingDirectoryPreservation:
+    """refresh_systemd_unit_if_needed must preserve a user-customized
+    WorkingDirectory instead of resetting it to PROJECT_ROOT."""
+
+    def test_refresh_preserves_custom_working_directory(self, tmp_path, monkeypatch):
+        unit_path = tmp_path / "hermes-gateway.service"
+        # Install a unit with a custom WorkingDirectory
+        custom_wd = "/home/user/my-project"
+        unit_path.write_text(
+            f"[Service]\nWorkingDirectory={custom_wd}\nExecStart=/old/python\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(gateway_cli, "get_systemd_unit_path", lambda system=False: unit_path)
+
+        generated_units: list[dict] = []
+        original_generate = gateway_cli.generate_systemd_unit
+
+        def tracking_generate(**kwargs):
+            generated_units.append(kwargs)
+            return original_generate(**kwargs)
+
+        monkeypatch.setattr(gateway_cli, "generate_systemd_unit", tracking_generate)
+
+        calls = []
+        monkeypatch.setattr(
+            gateway_cli.subprocess, "run",
+            lambda cmd, **kw: calls.append(cmd) or SimpleNamespace(returncode=0, stdout="", stderr=""),
+        )
+
+        gateway_cli.refresh_systemd_unit_if_needed(system=False)
+
+        # The generate call should have received the custom working_dir_override
+        assert len(generated_units) >= 1
+        last_call = generated_units[-1]
+        assert last_call.get("working_dir_override") == custom_wd
+
+    def test_refresh_does_not_override_default_working_directory(self, tmp_path, monkeypatch):
+        unit_path = tmp_path / "hermes-gateway.service"
+        # Install a unit with the default PROJECT_ROOT WorkingDirectory
+        default_wd = str(gateway_cli.PROJECT_ROOT)
+        unit_path.write_text(
+            f"[Service]\nWorkingDirectory={default_wd}\nExecStart=/old/python\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(gateway_cli, "get_systemd_unit_path", lambda system=False: unit_path)
+
+        generated_units: list[dict] = []
+        original_generate = gateway_cli.generate_systemd_unit
+
+        def tracking_generate(**kwargs):
+            generated_units.append(kwargs)
+            return original_generate(**kwargs)
+
+        monkeypatch.setattr(gateway_cli, "generate_systemd_unit", tracking_generate)
+
+        calls = []
+        monkeypatch.setattr(
+            gateway_cli.subprocess, "run",
+            lambda cmd, **kw: calls.append(cmd) or SimpleNamespace(returncode=0, stdout="", stderr=""),
+        )
+
+        gateway_cli.refresh_systemd_unit_if_needed(system=False)
+
+        # working_dir_override should be None (default path, no override needed)
+        assert len(generated_units) >= 1
+        last_call = generated_units[-1]
+        assert last_call.get("working_dir_override") is None
+
+    def test_generate_systemd_unit_respects_working_dir_override(self):
+        custom_wd = "/custom/working/dir"
+        unit = gateway_cli.generate_systemd_unit(system=False, working_dir_override=custom_wd)
+        assert f"WorkingDirectory={custom_wd}" in unit
+
+    def test_generate_systemd_unit_defaults_to_project_root(self):
+        unit = gateway_cli.generate_systemd_unit(system=False)
+        assert f"WorkingDirectory={gateway_cli.PROJECT_ROOT}" in unit
+
+    def test_read_working_directory_from_unit_custom(self, tmp_path):
+        unit_path = tmp_path / "test.service"
+        unit_path.write_text("[Service]\nWorkingDirectory=/custom/path\n")
+        result = gateway_cli._read_working_directory_from_unit(unit_path)
+        assert result == "/custom/path"
+
+    def test_read_working_directory_from_unit_default(self, tmp_path):
+        unit_path = tmp_path / "test.service"
+        unit_path.write_text(f"[Service]\nWorkingDirectory={gateway_cli.PROJECT_ROOT}\n")
+        result = gateway_cli._read_working_directory_from_unit(unit_path)
+        assert result is None
+
+    def test_read_working_directory_from_unit_missing_file(self, tmp_path):
+        unit_path = tmp_path / "nonexistent.service"
+        result = gateway_cli._read_working_directory_from_unit(unit_path)
+        assert result is None
