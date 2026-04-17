@@ -2124,6 +2124,12 @@ class AIAgent:
             return True
         return stripped[-1] in '.!?:)"\']}。！？：）】」』》'
 
+    def _is_ollama(self) -> bool:
+        """Return True when the endpoint looks like an Ollama server."""
+        if not self.base_url:
+            return False
+        return "ollama" in self._base_url_lower or ":11434" in self._base_url_lower
+
     def _is_ollama_glm_backend(self) -> bool:
         """Detect the narrow backend family affected by Ollama/GLM stop misreports."""
         model_lower = (self.model or "").lower()
@@ -6780,13 +6786,11 @@ class AIAgent:
             options["num_ctx"] = self._ollama_num_ctx
             extra_body["options"] = options
 
-        # Ollama / custom provider: pass think=false when reasoning is disabled.
-        # Ollama does not recognise the OpenRouter-style `reasoning` extra_body
-        # field, so we use its native `think` parameter instead.
-        # This prevents thinking-capable models (Qwen3, etc.) from generating
-        # <think> blocks and producing empty-response errors when the user has
-        # set reasoning_effort: none.
-        if self.provider == "custom" and self.reasoning_config and isinstance(self.reasoning_config, dict):
+        # Ollama: pass think=false when reasoning is disabled.
+        # The `think` parameter is Ollama-specific; sending it to other
+        # custom providers (Mistral, Fireworks, vLLM, etc.) causes 422 errors.
+        # See: https://github.com/anthropics/hermes-agent/issues/11237
+        if self.provider == "custom" and self._is_ollama() and self.reasoning_config and isinstance(self.reasoning_config, dict):
             _effort = (self.reasoning_config.get("effort") or "").strip().lower()
             _enabled = self.reasoning_config.get("enabled", True)
             if _effort == "none" or _enabled is False:

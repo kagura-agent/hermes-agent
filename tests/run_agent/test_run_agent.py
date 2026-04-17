@@ -1024,6 +1024,29 @@ class TestBuildApiKwargs:
         kwargs = agent._build_api_kwargs(messages)
         assert kwargs.get("extra_body", {}).get("think") is None
 
+    def test_non_ollama_custom_provider_no_think(self, agent):
+        """Custom provider pointing to non-Ollama endpoint (e.g. Mistral)
+        should NOT inject think=false even with reasoning disabled.
+        See: https://github.com/anthropics/hermes-agent/issues/11237"""
+        agent.provider = "custom"
+        agent.base_url = "https://api.mistral.ai/v1"
+        agent._base_url_lower = agent.base_url.lower()
+        agent.reasoning_config = {"effort": "none"}
+        messages = [{"role": "user", "content": "hi"}]
+        kwargs = agent._build_api_kwargs(messages)
+        assert kwargs.get("extra_body", {}).get("think") is None
+
+    def test_non_ollama_custom_provider_enabled_false_no_think(self, agent):
+        """Custom provider (vLLM/Fireworks) with enabled=false should NOT
+        inject think=false — the param is Ollama-specific."""
+        agent.provider = "custom"
+        agent.base_url = "https://api.fireworks.ai/inference/v1"
+        agent._base_url_lower = agent.base_url.lower()
+        agent.reasoning_config = {"enabled": False}
+        messages = [{"role": "user", "content": "hi"}]
+        kwargs = agent._build_api_kwargs(messages)
+        assert kwargs.get("extra_body", {}).get("think") is None
+
 
 
 class TestBuildAssistantMessage:
