@@ -8156,6 +8156,15 @@ class GatewayRunner:
         from hermes_cli.tools_config import _get_platform_tools
         enabled_toolsets = sorted(_get_platform_tools(user_config, platform_key))
 
+        # Checkpoint config — read from config.yaml so gateway-mode agents
+        # snapshot the working directory before file-mutating tool calls,
+        # matching the behaviour of CLI mode (run_agent.py).
+        _cp_cfg = user_config.get("checkpoints", {})
+        if isinstance(_cp_cfg, bool):
+            _cp_cfg = {"enabled": _cp_cfg}
+        _checkpoints_enabled = bool(_cp_cfg.get("enabled", False))
+        _checkpoint_max_snapshots = int(_cp_cfg.get("max_snapshots", 50))
+
         display_config = user_config.get("display", {})
         if not isinstance(display_config, dict):
             display_config = {}
@@ -8652,6 +8661,8 @@ class GatewayRunner:
                     gateway_session_key=session_key,
                     session_db=self._session_db,
                     fallback_model=self._fallback_model,
+                    checkpoints_enabled=_checkpoints_enabled,
+                    checkpoint_max_snapshots=_checkpoint_max_snapshots,
                 )
                 if _cache_lock and _cache is not None:
                     with _cache_lock:
