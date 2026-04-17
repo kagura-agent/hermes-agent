@@ -1,5 +1,6 @@
 """SSH remote execution environment with ControlMaster connection persistence."""
 
+import hashlib
 import logging
 import os
 import shlex
@@ -18,6 +19,23 @@ from tools.environments.file_sync import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# macOS AF_UNIX sun_path limit is 104 bytes; Linux is 108.
+# A raw "user@[::1:2:3:4:5:6]:22.sock" easily exceeds this.
+# We hash the connection identity into a short, fixed-length filename.
+_SOCKET_PATH_MAX = 104  # conservative: use macOS limit everywhere
+
+
+def _socket_filename(user: str, host: str, port: int) -> str:
+    """Return a short, deterministic socket filename for a connection.
+
+    Uses a truncated SHA-256 hex digest so the full path stays under
+    ``_SOCKET_PATH_MAX`` even with a long ``control_dir`` prefix.
+    """
+    identity = f"{user}@{host}:{port}"
+    digest = hashlib.sha256(identity.encode()).hexdigest()[:16]
+    return f"h-{digest}.sock"  # 24 chars total
 
 
 def _ensure_ssh_available() -> None:
@@ -47,7 +65,7 @@ class SSHEnvironment(BaseEnvironment):
 
         self.control_dir = Path(tempfile.gettempdir()) / "hermes-ssh"
         self.control_dir.mkdir(parents=True, exist_ok=True)
-        self.control_socket = self.control_dir / f"{user}@{host}:{port}.sock"
+        self.control_socket = self.control_dir / _socket_filename(user, host, port)
         _ensure_ssh_available()
         self._establish_connection()
         self._remote_home = self._detect_remote_home()

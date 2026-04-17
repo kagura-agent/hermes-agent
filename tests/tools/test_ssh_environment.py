@@ -220,3 +220,42 @@ class TestPersistentSSH:
         assert len(lines) == 1000
         assert lines[0] == "1"
         assert lines[-1] == "1000"
+
+
+# ── _socket_filename unit tests ──────────────────────────────────────────
+
+from tools.environments.ssh import _socket_filename, _SOCKET_PATH_MAX
+
+
+class TestSocketFilename:
+    """Ensure socket filenames stay within OS limits."""
+
+    def test_short_host(self):
+        name = _socket_filename("user", "example.com", 22)
+        assert name.endswith(".sock")
+        assert len(name) <= 30  # plenty of room for control_dir prefix
+
+    def test_ipv6_long_address(self):
+        host = "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+        name = _socket_filename("deploy", host, 2222)
+        # /tmp/hermes-ssh/ is 17 chars; full path must be < 104
+        full_path = f"/tmp/hermes-ssh/{name}"
+        assert len(full_path) < _SOCKET_PATH_MAX, (
+            f"Socket path too long ({len(full_path)} >= {_SOCKET_PATH_MAX}): {full_path}"
+        )
+
+    def test_very_long_hostname(self):
+        host = "a" * 200 + ".example.com"
+        name = _socket_filename("root", host, 22)
+        full_path = f"/tmp/hermes-ssh/{name}"
+        assert len(full_path) < _SOCKET_PATH_MAX
+
+    def test_deterministic(self):
+        a = _socket_filename("u", "h", 22)
+        b = _socket_filename("u", "h", 22)
+        assert a == b
+
+    def test_different_ports_differ(self):
+        a = _socket_filename("u", "h", 22)
+        b = _socket_filename("u", "h", 2222)
+        assert a != b
