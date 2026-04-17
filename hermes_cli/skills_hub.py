@@ -52,13 +52,13 @@ def _resolve_short_name(name: str, sources, console: Console) -> str:
         return exact[0].identifier
 
     if len(exact) > 1:
-        c.print(f"\n[yellow]Multiple skills named '{name}' found:[/]")
+        c.print(f"\n[dark_orange3]Multiple skills named '{name}' found:[/]")
         table = Table()
         table.add_column("Source", style="dim")
         table.add_column("Trust", style="dim")
         table.add_column("Identifier", style="bold cyan")
         for r in exact:
-            trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "yellow"}.get(r.trust_level, "dim")
+            trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "dark_orange3"}.get(r.trust_level, "dim")
             trust_label = "official" if r.source == "official" else r.trust_level
             table.add_row(r.source, f"[{trust_style}]{trust_label}[/]", r.identifier)
         c.print(table)
@@ -67,7 +67,7 @@ def _resolve_short_name(name: str, sources, console: Console) -> str:
 
     # No exact match — check if there are partial matches to suggest
     if results:
-        c.print(f"[yellow]No exact match for '{name}'. Did you mean one of these?[/]")
+        c.print(f"[dark_orange3]No exact match for '{name}'. Did you mean one of these?[/]")
         for r in results[:5]:
             c.print(f"  [cyan]{r.name}[/] — {r.identifier}")
         c.print()
@@ -166,7 +166,7 @@ def do_search(query: str, source: str = "all", limit: int = 10,
     table.add_column("Identifier", style="dim")
 
     for r in results:
-        trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "yellow"}.get(r.trust_level, "dim")
+        trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "dark_orange3"}.get(r.trust_level, "dim")
         trust_label = "official" if r.source == "official" else r.trust_level
         table.add_row(
             r.name,
@@ -268,7 +268,7 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
 
     for i, r in enumerate(page_items, start=start + 1):
         trust_style = {"builtin": "bright_cyan", "trusted": "green",
-                       "community": "yellow"}.get(r.trust_level, "dim")
+                       "community": "dark_orange3"}.get(r.trust_level, "dim")
         trust_label = "★ official" if r.source == "official" else r.trust_level
 
         desc = r.description[:50]
@@ -301,7 +301,7 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
         c.print(f"  [dim]Sources: {', '.join(parts)}[/]")
 
     if timed_out:
-        c.print(f"  [yellow]⚡ Slow sources skipped: {', '.join(timed_out)} "
+        c.print(f"  [dark_orange3]⚡ Slow sources skipped: {', '.join(timed_out)} "
                 f"— run again for cached results[/]")
 
     c.print("[dim]Tip: 'hermes skills search <query>' searches deeper across all registries[/]\n")
@@ -344,7 +344,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
         c.print(f"[bold red]Error:[/] Could not fetch '{identifier}' from any source.")
         if rate_limited:
             c.print(
-                "[yellow]Hint:[/] GitHub API rate limit exhausted "
+                "[dark_orange3]Hint:[/] GitHub API rate limit exhausted "
                 "(unauthenticated: 60 requests/hour).\n"
                 "Set [bold]GITHUB_TOKEN[/] in your .env or install the "
                 "[bold]gh[/] CLI and run [bold]gh auth login[/] "
@@ -364,7 +364,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
     lock = HubLockFile()
     existing = lock.get_installed(bundle.name)
     if existing:
-        c.print(f"[yellow]Warning:[/] '{bundle.name}' is already installed at {existing['install_path']}")
+        c.print(f"[dark_orange3]Warning:[/] '{bundle.name}' is already installed at {existing['install_path']}")
         if not force:
             c.print("Use --force to reinstall.\n")
             return
@@ -421,13 +421,13 @@ def do_install(identifier: str, category: str = "", force: bool = False,
             ))
         else:
             c.print(Panel(
-                "[bold yellow]You are installing a third-party skill at your own risk.[/]\n\n"
+                "[bold dark_orange3]You are installing a third-party skill at your own risk.[/]\n\n"
                 "External skills can contain instructions that influence agent behavior,\n"
                 "shell commands, and scripts. Even after automated scanning, you should\n"
                 "review the installed files before use.\n\n"
                 f"Files will be at: [cyan]{display_hermes_home()}/skills/{category + '/' if category else ''}{bundle.name}/[/]",
                 title="Disclaimer",
-                border_style="yellow",
+                border_style="dark_orange3",
             ))
         c.print(f"[bold]Install '{bundle.name}'?[/]")
         try:
@@ -485,7 +485,7 @@ def do_inspect(identifier: str, console: Optional[Console] = None) -> None:
         return
 
     c.print()
-    trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "yellow"}.get(meta.trust_level, "dim")
+    trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "dark_orange3"}.get(meta.trust_level, "dim")
     trust_label = "official" if meta.source == "official" else meta.trust_level
 
     info_lines = [
@@ -563,7 +563,7 @@ def do_list(source_filter: str = "all", console: Optional[Console] = None) -> No
         if source_filter != "all" and source_filter != source_type:
             continue
 
-        trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "yellow", "local": "dim"}.get(trust, "dim")
+        trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "dark_orange3", "local": "dim"}.get(trust, "dim")
         trust_label = "official" if source_display == "official" else trust
         table.add_row(name, category, source_display, f"[{trust_style}]{trust_label}[/]")
 
@@ -641,7 +641,7 @@ def do_audit(name: Optional[str] = None, console: Optional[Console] = None) -> N
     for entry in targets:
         skill_path = SKILLS_DIR / entry["install_path"]
         if not skill_path.exists():
-            c.print(f"[yellow]Warning:[/] {entry['name']} — path missing: {entry['install_path']}")
+            c.print(f"[dark_orange3]Warning:[/] {entry['name']} — path missing: {entry['install_path']}")
             continue
 
         result = scan_skill(skill_path, source=entry.get("identifier", entry["source"]))
@@ -712,7 +712,7 @@ def do_tap(action: str, repo: str = "", console: Optional[Console] = None) -> No
         if mgr.add(repo):
             c.print(f"[bold green]Added tap:[/] {repo}\n")
         else:
-            c.print(f"[yellow]Tap already exists:[/] {repo}\n")
+            c.print(f"[dark_orange3]Tap already exists:[/] {repo}\n")
 
     elif action == "remove":
         if not repo:
@@ -790,7 +790,7 @@ def do_publish(skill_path: str, target: str = "github", repo: str = "",
             c.print(f"[bold red]Error:[/] {msg}\n")
 
     elif target == "clawhub":
-        c.print("[yellow]ClawHub publishing is not yet supported. "
+        c.print("[dark_orange3]ClawHub publishing is not yet supported. "
                 "Submit manually at https://clawhub.ai/submit[/]\n")
     else:
         c.print(f"[bold red]Unknown target:[/] {target}. Use 'github' or 'clawhub'.\n")
@@ -971,7 +971,7 @@ def do_snapshot_import(input_path: str, force: bool = False,
         identifier = entry.get("identifier", "")
         category = entry.get("category", "")
         if not identifier:
-            c.print(f"[yellow]Skipping entry with no identifier: {entry.get('name', '?')}[/]")
+            c.print(f"[dark_orange3]Skipping entry with no identifier: {entry.get('name', '?')}[/]")
             continue
 
         c.print(f"[bold]--- {entry.get('name', identifier)} ---[/]")

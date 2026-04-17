@@ -411,7 +411,7 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
             if name in disabled_tools:
                 colored_names.append(f"[red]{name}[/]")
             elif name in lazy_tools:
-                colored_names.append(f"[yellow]{name}[/]")
+                colored_names.append(f"[dark_orange3]{name}[/]")
             else:
                 colored_names.append(f"[{text}]{name}[/]")
 
@@ -432,7 +432,7 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
                 elif name in disabled_tools:
                     colored_names.append(f"[red]{name}[/]")
                 elif name in lazy_tools:
-                    colored_names.append(f"[yellow]{name}[/]")
+                    colored_names.append(f"[dark_orange3]{name}[/]")
                 else:
                     colored_names.append(f"[{text}]{name}[/]")
             tools_str = ", ".join(colored_names)
@@ -507,8 +507,8 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
             from hermes_cli.config import recommended_update_command
             commits_word = "commit" if behind == 1 else "commits"
             right_lines.append(
-                f"[bold yellow]⚠ {behind} {commits_word} behind[/]"
-                f"[dim yellow] — run [bold]{recommended_update_command()}[/bold] to update[/]"
+                f"[bold dark_orange3]⚠ {behind} {commits_word} behind[/]"
+                f"[dim dark_orange3] — run [bold]{recommended_update_command()}[/bold] to update[/]"
             )
     except Exception:
         pass  # Never break the banner over an update check

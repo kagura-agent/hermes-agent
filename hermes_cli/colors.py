@@ -25,7 +25,7 @@ class Colors:
     DIM = "\033[2m"
     RED = "\033[31m"
     GREEN = "\033[32m"
-    YELLOW = "\033[33m"
+    YELLOW = "\033[38;5;178m"
     BLUE = "\033[34m"
     MAGENTA = "\033[35m"
     CYAN = "\033[36m"
