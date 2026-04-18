@@ -2628,6 +2628,53 @@ def _expand_env_vars(obj):
     return obj
 
 
+_ENV_PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
+
+
+def _collect_env_placeholders(obj, _prefix=""):
+    """Walk *obj* and return a dict mapping dotted key paths to original strings
+    for every value that contains a ``${…}`` placeholder.
+
+    Only string leaves are inspected; lists use ``[i]`` indices in the path.
+    """
+    out: dict[str, str] = {}
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            path = f"{_prefix}.{k}" if _prefix else k
+            out.update(_collect_env_placeholders(v, path))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            out.update(_collect_env_placeholders(v, f"{_prefix}[{i}]"))
+    elif isinstance(obj, str) and _ENV_PLACEHOLDER_RE.search(obj):
+        out[_prefix] = obj
+    return out
+
+
+def _restore_env_placeholders(obj, placeholders, _prefix=""):
+    """Return a copy of *obj* with values listed in *placeholders* replaced by
+    their original ``${…}`` template strings.
+
+    Mutates nothing — returns new dicts/lists as needed.
+    """
+    if isinstance(obj, dict):
+        new = {}
+        for k, v in obj.items():
+            path = f"{_prefix}.{k}" if _prefix else k
+            if path in placeholders and isinstance(v, str):
+                new[k] = placeholders[path]
+            else:
+                new[k] = _restore_env_placeholders(v, placeholders, path)
+        return new
+    if isinstance(obj, list):
+        return [
+            placeholders.get(f"{_prefix}[{i}]", None)
+            if isinstance(v, str) and f"{_prefix}[{i}]" in placeholders
+            else _restore_env_placeholders(v, placeholders, f"{_prefix}[{i}]")
+            for i, v in enumerate(obj)
+        ]
+    return obj
+
+
 def _normalize_root_model_keys(config: Dict[str, Any]) -> Dict[str, Any]:
     """Move stale root-level provider/base_url into model section.
 
@@ -2827,6 +2874,12 @@ def save_config(config: Dict[str, Any]):
     ensure_hermes_home()
     config_path = get_config_path()
     normalized = _normalize_root_model_keys(_normalize_max_turns_config(config))
+
+    # Restore ${…} placeholders so expanded secrets are never written to disk.
+    raw = read_raw_config()
+    placeholders = _collect_env_placeholders(raw)
+    if placeholders:
+        normalized = _restore_env_placeholders(normalized, placeholders)
 
     # Build optional commented-out sections for features that are off by
     # default or only relevant when explicitly configured.

@@ -2,7 +2,15 @@
 
 import os
 import pytest
-from hermes_cli.config import _expand_env_vars, load_config
+import yaml
+from hermes_cli.config import (
+    _expand_env_vars,
+    _collect_env_placeholders,
+    _restore_env_placeholders,
+    load_config,
+    save_config,
+    read_raw_config,
+)
 from unittest.mock import patch as mock_patch
 
 
@@ -130,3 +138,129 @@ class TestLoadCliConfigExpansion:
         config = load_cli_config()
 
         assert config["auxiliary"]["vision"]["api_key"] == "${UNSET_CLI_VAR_ABC}"
+
+
+class TestCollectEnvPlaceholders:
+    def test_flat_dict(self):
+        raw = {"api_key": "${SECRET}", "name": "literal"}
+        result = _collect_env_placeholders(raw)
+        assert result == {"api_key": "${SECRET}"}
+
+    def test_nested_dict(self):
+        raw = {"providers": {"my-llm": {"api_key": "${MY_KEY}", "api": "http://x"}}}
+        result = _collect_env_placeholders(raw)
+        assert result == {"providers.my-llm.api_key": "${MY_KEY}"}
+
+    def test_list_items(self):
+        raw = {"keys": ["${A}", "literal"]}
+        result = _collect_env_placeholders(raw)
+        assert result == {"keys[0]": "${A}"}
+
+    def test_no_placeholders(self):
+        assert _collect_env_placeholders({"x": "plain", "n": 42}) == {}
+
+    def test_multiple_placeholders_in_one_string(self):
+        raw = {"url": "https://${HOST}:${PORT}/api"}
+        result = _collect_env_placeholders(raw)
+        assert result == {"url": "https://${HOST}:${PORT}/api"}
+
+
+class TestRestoreEnvPlaceholders:
+    def test_restores_nested(self):
+        placeholders = {"providers.my-llm.api_key": "${MY_KEY}"}
+        expanded = {"providers": {"my-llm": {"api_key": "actual-secret", "api": "http://x"}}}
+        result = _restore_env_placeholders(expanded, placeholders)
+        assert result["providers"]["my-llm"]["api_key"] == "${MY_KEY}"
+        assert result["providers"]["my-llm"]["api"] == "http://x"
+
+    def test_no_placeholders_passthrough(self):
+        data = {"a": "b", "c": 1}
+        assert _restore_env_placeholders(data, {}) == data
+
+    def test_list_restore(self):
+        placeholders = {"keys[0]": "${A}"}
+        expanded = {"keys": ["expanded-a", "literal"]}
+        result = _restore_env_placeholders(expanded, placeholders)
+        assert result["keys"] == ["${A}", "literal"]
+
+
+class TestSaveConfigPreservesPlaceholders:
+    """Round-trip: config with ${…} placeholders survives save_config()."""
+
+    def test_migration_round_trip(self, tmp_path, monkeypatch):
+        """api_key placeholder must survive load_config → save_config cycle."""
+        config_yaml = (
+            "providers:\n"
+            "  my-llm:\n"
+            "    api: http://localhost:8080\n"
+            "    api_key: ${MY_SECRET_KEY}\n"
+            "model:\n"
+            "  default: gpt-4\n"
+        )
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(config_yaml)
+
+        monkeypatch.setenv("MY_SECRET_KEY", "sk-real-secret-value")
+        monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: config_file)
+        monkeypatch.setattr("hermes_cli.config.ensure_hermes_home", lambda: None)
+        monkeypatch.setattr("hermes_cli.config.is_managed", lambda: False)
+
+        # Simulate what migrate_config does: load → modify → save
+        config = load_config()
+        assert config["providers"]["my-llm"]["api_key"] == "sk-real-secret-value"
+
+        save_config(config)
+
+        # Re-read the raw file — placeholder must be preserved
+        raw = yaml.safe_load(config_file.read_text())
+        assert raw["providers"]["my-llm"]["api_key"] == "${MY_SECRET_KEY}"
+        assert "sk-real-secret-value" not in config_file.read_text()
+
+    def test_non_placeholder_values_written_normally(self, tmp_path, monkeypatch):
+        """Literal api_key values (no ${…}) should be written as-is."""
+        config_yaml = (
+            "providers:\n"
+            "  my-llm:\n"
+            "    api: http://localhost:8080\n"
+            "    api_key: sk-literal-key\n"
+        )
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(config_yaml)
+
+        monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: config_file)
+        monkeypatch.setattr("hermes_cli.config.ensure_hermes_home", lambda: None)
+        monkeypatch.setattr("hermes_cli.config.is_managed", lambda: False)
+
+        config = load_config()
+        save_config(config)
+
+        raw = yaml.safe_load(config_file.read_text())
+        assert raw["providers"]["my-llm"]["api_key"] == "sk-literal-key"
+
+    def test_multiple_placeholders_preserved(self, tmp_path, monkeypatch):
+        """Multiple placeholders across different keys all survive."""
+        config_yaml = (
+            "providers:\n"
+            "  openai:\n"
+            "    api_key: ${OPENAI_KEY}\n"
+            "  anthropic:\n"
+            "    api_key: ${ANTHROPIC_KEY}\n"
+        )
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(config_yaml)
+
+        monkeypatch.setenv("OPENAI_KEY", "sk-openai-123")
+        monkeypatch.setenv("ANTHROPIC_KEY", "sk-ant-456")
+        monkeypatch.setattr("hermes_cli.config.get_config_path", lambda: config_file)
+        monkeypatch.setattr("hermes_cli.config.ensure_hermes_home", lambda: None)
+        monkeypatch.setattr("hermes_cli.config.is_managed", lambda: False)
+
+        config = load_config()
+        save_config(config)
+
+        raw = yaml.safe_load(config_file.read_text())
+        assert raw["providers"]["openai"]["api_key"] == "${OPENAI_KEY}"
+        assert raw["providers"]["anthropic"]["api_key"] == "${ANTHROPIC_KEY}"
+        file_text = config_file.read_text()
+        assert "sk-openai-123" not in file_text
+        assert "sk-ant-456" not in file_text
