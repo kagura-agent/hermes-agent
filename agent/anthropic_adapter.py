@@ -1013,7 +1013,11 @@ def convert_messages_to_anthropic(
 
     for m in messages:
         role = m.get("role", "user")
-        content = m.get("content", "")
+        content = m.get("content")
+        # Normalize empty string to None — proxies may convert "" to
+        # {"type": "text", "text": ""} which Anthropic rejects (HTTP 400).
+        if content is not None and isinstance(content, str) and not content.strip():
+            content = None
 
         if role == "system":
             if isinstance(content, list):

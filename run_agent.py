@@ -6993,7 +6993,7 @@ class AIAgent:
         # reasoning fields are present (some models/providers embed thinking
         # directly in the content rather than returning separate API fields).
         if not reasoning_text:
-            content = assistant_message.content or ""
+            content = assistant_message.content or ""  # safe for regex; not stored
             think_blocks = re.findall(r'<think>(.*?)</think>', content, flags=re.DOTALL)
             if think_blocks:
                 combined = "\n\n".join(b.strip() for b in think_blocks if b.strip())
@@ -7019,8 +7019,12 @@ class AIAgent:
 
         # Sanitize surrogates from API response — some models (e.g. Kimi/GLM via Ollama)
         # can return invalid surrogate code points that crash json.dumps() on persist.
-        _raw_content = assistant_message.content or ""
-        _san_content = _sanitize_surrogates(_raw_content)
+        _raw_content = assistant_message.content
+        # Normalize empty string content to None — prevents downstream proxies
+        # from generating empty text blocks that Anthropic rejects (#11906).
+        if isinstance(_raw_content, str) and not _raw_content.strip():
+            _raw_content = None
+        _san_content = _sanitize_surrogates(_raw_content) if _raw_content is not None else None
         if reasoning_text:
             reasoning_text = _sanitize_surrogates(reasoning_text)
 
@@ -7188,6 +7192,11 @@ class AIAgent:
             api_messages = []
             for msg in messages:
                 api_msg = msg.copy()
+                # Normalize empty assistant content to None (#11906)
+                if (api_msg.get("role") == "assistant"
+                        and isinstance(api_msg.get("content"), str)
+                        and not api_msg["content"].strip()):
+                    api_msg["content"] = None
                 if msg.get("role") == "assistant":
                     reasoning = msg.get("reasoning")
                     if reasoning:
@@ -8795,6 +8804,14 @@ class AIAgent:
             api_messages = []
             for idx, msg in enumerate(messages):
                 api_msg = msg.copy()
+
+                # Normalize empty assistant content to None to prevent
+                # OpenAI-compatible proxies from generating empty text blocks
+                # that Anthropic rejects with HTTP 400 (#11906).
+                if (api_msg.get("role") == "assistant"
+                        and isinstance(api_msg.get("content"), str)
+                        and not api_msg["content"].strip()):
+                    api_msg["content"] = None
 
                 # Inject ephemeral context into the current turn's user message.
                 # Sources: memory manager prefetch + plugin pre_llm_call hooks

@@ -1066,7 +1066,8 @@ class TestBuildAssistantMessage:
     def test_empty_content(self, agent):
         msg = _mock_assistant_msg(content=None)
         result = agent._build_assistant_message(msg, "stop")
-        assert result["content"] == ""
+        # None content should stay None, not be converted to "" (#11906)
+        assert result["content"] is None
 
     def test_tool_call_extra_content_preserved(self, agent):
         """Gemini thinking models attach extra_content with thought_signature

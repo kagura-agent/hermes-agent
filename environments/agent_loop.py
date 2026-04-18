@@ -313,7 +313,7 @@ class HermesAgentLoop:
                 # Build the assistant message dict for conversation history
                 msg_dict: Dict[str, Any] = {
                     "role": "assistant",
-                    "content": assistant_msg.content or "",
+                    "content": assistant_msg.content,
                     "tool_calls": [_tc_to_dict(tc) for tc in assistant_msg.tool_calls],
                 }
 
@@ -490,7 +490,7 @@ class HermesAgentLoop:
                 # No tool calls -- model is done
                 msg_dict = {
                     "role": "assistant",
-                    "content": assistant_msg.content or "",
+                    "content": assistant_msg.content,
                 }
                 if reasoning:
                     msg_dict["reasoning_content"] = reasoning
