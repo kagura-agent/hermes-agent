@@ -438,3 +438,94 @@ def test_rollback_restore_resolves_number_and_file_path():
     assert resp["result"]["success"] is True
     assert calls["args"][1] == "bbb222"
     assert calls["args"][2] == "src/app.tsx"
+
+
+# ---------------------------------------------------------------------------
+# _make_agent calls resolve_runtime_provider  (#11884)
+# ---------------------------------------------------------------------------
+
+
+def test_make_agent_calls_resolve_runtime_provider(monkeypatch):
+    """_make_agent must call resolve_runtime_provider and forward credentials."""
+    runtime_result = {
+        "api_key": "sk-test-key",
+        "base_url": "https://api.example.com/v1",
+        "provider": "anthropic",
+        "api_mode": "chat",
+        "command": None,
+        "args": None,
+        "credential_pool": None,
+    }
+
+    resolve_called = {}
+
+    def fake_resolve(**kwargs):
+        resolve_called["yes"] = True
+        return runtime_result
+
+    monkeypatch.setattr(
+        "hermes_cli.runtime_provider.resolve_runtime_provider", fake_resolve
+    )
+
+    captured = {}
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr("run_agent.AIAgent", FakeAgent)
+    monkeypatch.setattr(server, "_load_cfg", lambda: {})
+    monkeypatch.setattr(server, "_resolve_model", lambda: "claude-opus-4-6")
+    monkeypatch.setattr(server, "_load_tool_progress_mode", lambda: "quiet")
+    monkeypatch.setattr(server, "_load_reasoning_config", lambda: None)
+    monkeypatch.setattr(server, "_load_service_tier", lambda: None)
+    monkeypatch.setattr(server, "_load_enabled_toolsets", lambda: None)
+    monkeypatch.setattr(server, "_get_db", lambda: None)
+    monkeypatch.setattr(server, "_agent_cbs", lambda sid: {})
+
+    server._make_agent("sid1", "key1")
+
+    assert resolve_called.get("yes"), "resolve_runtime_provider was not called"
+    assert captured["api_key"] == "sk-test-key"
+    assert captured["base_url"] == "https://api.example.com/v1"
+    assert captured["provider"] == "anthropic"
+    assert captured["api_mode"] == "chat"
+    assert captured["model"] == "claude-opus-4-6"
+
+
+def test_make_agent_passes_credential_pool(monkeypatch):
+    """credential_pool from resolve_runtime_provider reaches AIAgent."""
+    pool_sentinel = object()
+    runtime_result = {
+        "api_key": "k",
+        "base_url": "https://x",
+        "provider": "openrouter",
+        "api_mode": None,
+        "command": None,
+        "args": None,
+        "credential_pool": pool_sentinel,
+    }
+    monkeypatch.setattr(
+        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        lambda **kw: runtime_result,
+    )
+
+    captured = {}
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr("run_agent.AIAgent", FakeAgent)
+    monkeypatch.setattr(server, "_load_cfg", lambda: {})
+    monkeypatch.setattr(server, "_resolve_model", lambda: "m")
+    monkeypatch.setattr(server, "_load_tool_progress_mode", lambda: "quiet")
+    monkeypatch.setattr(server, "_load_reasoning_config", lambda: None)
+    monkeypatch.setattr(server, "_load_service_tier", lambda: None)
+    monkeypatch.setattr(server, "_load_enabled_toolsets", lambda: None)
+    monkeypatch.setattr(server, "_get_db", lambda: None)
+    monkeypatch.setattr(server, "_agent_cbs", lambda sid: {})
+
+    server._make_agent("s", "k")
+
+    assert captured["credential_pool"] is pool_sentinel
