@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 from utils import is_truthy_value
 
-_COMPLEX_KEYWORDS = {
+_DEFAULT_COMPLEX_KEYWORDS = {
     "debug",
     "debugging",
     "implement",
@@ -44,6 +44,25 @@ _COMPLEX_KEYWORDS = {
     "docker",
     "kubernetes",
 }
+
+
+def _resolve_complex_keywords(cfg: Dict[str, Any]) -> set:
+    """Build the effective complex-keywords set from config.
+
+    - complex_keywords_override: if set, replaces the defaults entirely.
+    - complex_keywords_extra: merged with the base set (defaults or override).
+    """
+    override = cfg.get("complex_keywords_override")
+    if isinstance(override, list):
+        base = {str(k).lower() for k in override}
+    else:
+        base = set(_DEFAULT_COMPLEX_KEYWORDS)
+
+    extra = cfg.get("complex_keywords_extra")
+    if isinstance(extra, list):
+        base |= {str(k).lower() for k in extra}
+
+    return base
 
 _URL_RE = re.compile(r"https?://|www\.", re.IGNORECASE)
 
@@ -97,7 +116,8 @@ def choose_cheap_model_route(user_message: str, routing_config: Optional[Dict[st
 
     lowered = text.lower()
     words = {token.strip(".,:;!?()[]{}\"'`") for token in lowered.split()}
-    if words & _COMPLEX_KEYWORDS:
+    complex_keywords = _resolve_complex_keywords(cfg)
+    if words & complex_keywords:
         return None
 
     route = dict(cheap_model)
