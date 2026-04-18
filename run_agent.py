@@ -5796,6 +5796,28 @@ class AIAgent:
                 effective_finish_reason = "length"
 
             full_reasoning = "".join(reasoning_parts) or None
+
+            # Fallback: estimate tokens when the provider didn't return usage
+            # (e.g. MiniMax via OpenRouter ignoring stream_options).
+            _usage_estimated = False
+            if usage_obj is None and (full_content or mock_tool_calls):
+                _usage_estimated = True
+                # Estimate output tokens from accumulated content (~4 chars/token)
+                output_text = full_content or ""
+                if mock_tool_calls:
+                    for tc in mock_tool_calls:
+                        output_text += tc.function.name + tc.function.arguments
+                est_output = max(1, len(output_text) // 4)
+                # Estimate input tokens from messages payload
+                input_text = json.dumps(api_kwargs.get("messages", []), default=str)
+                est_input = max(1, len(input_text) // 4)
+                usage_obj = SimpleNamespace(
+                    prompt_tokens=est_input,
+                    completion_tokens=est_output,
+                    total_tokens=est_input + est_output,
+                    estimated=True,
+                )
+
             mock_message = SimpleNamespace(
                 role=role,
                 content=full_content,
@@ -5812,6 +5834,7 @@ class AIAgent:
                 model=model_name,
                 choices=[mock_choice],
                 usage=usage_obj,
+                _usage_estimated=_usage_estimated,
             )
 
         def _call_anthropic():
@@ -9670,11 +9693,14 @@ class AIAgent:
                         _cache_pct = ""
                         if canonical_usage.cache_read_tokens and prompt_tokens:
                             _cache_pct = f" cache={canonical_usage.cache_read_tokens}/{prompt_tokens} ({100*canonical_usage.cache_read_tokens/prompt_tokens:.0f}%)"
+                        _est_tag = ""
+                        if getattr(response, '_usage_estimated', False):
+                            _est_tag = " (estimated)"
                         logger.info(
-                            "API call #%d: model=%s provider=%s in=%d out=%d total=%d latency=%.1fs%s",
+                            "API call #%d: model=%s provider=%s in=%d out=%d total=%d latency=%.1fs%s%s",
                             self.session_api_calls, self.model, self.provider or "unknown",
                             prompt_tokens, completion_tokens, total_tokens,
-                            api_duration, _cache_pct,
+                            api_duration, _cache_pct, _est_tag,
                         )
 
                         cost_result = estimate_usage_cost(
