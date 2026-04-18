@@ -1158,7 +1158,10 @@ def list_authenticated_providers(
                         groups[slug]["models"].append(m)
 
         for slug, grp in groups.items():
-            if slug.lower() in seen_slugs:
+            # Check both the full slug ("custom:foo") and the plain name ("foo")
+            # so user-config providers from section 3 are recognised as dupes.
+            plain = slug.removeprefix("custom:").lower()
+            if slug.lower() in seen_slugs or plain in seen_slugs:
                 continue
             # Skip if section 3 already emitted this endpoint under its
             # ``providers:`` dict key — matches on (display_name, base_url),
