@@ -9698,6 +9698,51 @@ class AIAgent:
                             if not self.quiet_mode:
                                 self._vprint(f"{self.log_prefix}   💾 Cache: {cached:,}/{prompt:,} tokens ({hit_pct:.0f}% hit, {written:,} written)")
                     
+                    else:
+                        # Provider returned no usage data (e.g. MiniMax via
+                        # OpenRouter ignoring stream_options include_usage).
+                        # Fall back to rough estimates so token accounting is
+                        # never silently 0/0.
+                        est_input = estimate_messages_tokens_rough(messages)
+                        _out_text = getattr(
+                            getattr(response, "choices", [None])[0],
+                            "message", None,
+                        )
+                        _out_content = getattr(_out_text, "content", None) or ""
+                        est_output = estimate_tokens_rough(_out_content)
+                        est_total = est_input + est_output
+
+                        logger.warning(
+                            "No usage data from provider — using rough estimates: "
+                            "in≈%d out≈%d total≈%d (model=%s provider=%s)",
+                            est_input, est_output, est_total,
+                            self.model, self.provider or "unknown",
+                        )
+
+                        usage_dict = {
+                            "prompt_tokens": est_input,
+                            "completion_tokens": est_output,
+                            "total_tokens": est_total,
+                        }
+                        self.context_compressor.update_from_response(usage_dict)
+
+                        self.session_input_tokens += est_input
+                        self.session_output_tokens += est_output
+                        self.session_prompt_tokens += est_input
+                        self.session_completion_tokens += est_output
+                        self.session_total_tokens += est_total
+                        self.session_api_calls += 1
+
+                        if self._session_db and self.session_id:
+                            try:
+                                self._session_db.update_token_counts(
+                                    self.session_id,
+                                    input_tokens=est_input,
+                                    output_tokens=est_output,
+                                )
+                            except Exception:
+                                pass  # never block the agent loop
+
                     has_retried_429 = False  # Reset on success
                     # Clear Nous rate limit state on successful request —
                     # proves the limit has reset and other sessions can
