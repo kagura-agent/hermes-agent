@@ -185,6 +185,28 @@ class TestInactivityTimeout:
         _cron_inactivity_limit = _cron_timeout if _cron_timeout > 0 else None
         assert _cron_inactivity_limit is None
 
+    def test_timeout_invalid_env_falls_back_to_default(self, monkeypatch):
+        """Malformed HERMES_CRON_TIMEOUT falls back to 600 instead of crashing."""
+        monkeypatch.setenv("HERMES_CRON_TIMEOUT", "not_a_number")
+        _default = 600
+        try:
+            _cron_timeout = float(os.getenv("HERMES_CRON_TIMEOUT", _default))
+        except (ValueError, TypeError):
+            _cron_timeout = float(_default)
+        assert _cron_timeout == 600.0
+        _cron_inactivity_limit = _cron_timeout if _cron_timeout > 0 else None
+        assert _cron_inactivity_limit == 600.0
+
+    def test_timeout_missing_env_uses_default(self, monkeypatch):
+        """When HERMES_CRON_TIMEOUT is unset, default 600 is used."""
+        monkeypatch.delenv("HERMES_CRON_TIMEOUT", raising=False)
+        _default = 600
+        try:
+            _cron_timeout = float(os.getenv("HERMES_CRON_TIMEOUT", _default))
+        except (ValueError, TypeError):
+            _cron_timeout = float(_default)
+        assert _cron_timeout == 600.0
+
     def test_timeout_error_includes_diagnostics(self):
         """The TimeoutError message should include last activity info."""
         agent = SlowFakeAgent(
