@@ -3109,8 +3109,10 @@ class DiscordAdapter(BasePlatformAdapter):
                     _, ext = os.path.splitext(att.filename)
                     ext = ext.lower()
                 if not ext and content_type:
+                    # Strip MIME parameters (e.g. "text/plain; charset=utf-8" → "text/plain")
+                    bare_mime = content_type.split(";")[0].strip()
                     mime_to_ext = {v: k for k, v in SUPPORTED_DOCUMENT_TYPES.items()}
-                    ext = mime_to_ext.get(content_type, "")
+                    ext = mime_to_ext.get(bare_mime, "")
                 if ext not in SUPPORTED_DOCUMENT_TYPES:
                     logger.warning(
                         "[Discord] Unsupported document type '%s' (%s), skipping",
