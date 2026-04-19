@@ -36,6 +36,14 @@ _GENERIC_SECRET_ASSIGN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ── Consecutive send failure tracking (#12395) ──
+# When the LLM repeatedly calls send_message to the same target and it keeps
+# failing, we need to stop after a few attempts to prevent an infinite loop
+# that burns tokens.  The counter resets on success or target change.
+_MAX_CONSECUTIVE_SEND_FAILURES = 3
+_consecutive_send_failures: Dict[str, int] = {}  # target -> failure count
+_consecutive_send_failures_lock = __import__("threading").Lock()
+
 
 def _sanitize_error_text(text) -> str:
     """Redact secrets from error text before surfacing it to users/models."""
@@ -144,12 +152,41 @@ def _handle_list():
         return json.dumps(_error(f"Failed to load channel directory: {e}"))
 
 
+def _reset_send_failure_tracker(target_key: str = None) -> None:
+    """Reset consecutive send failure counter(s).
+
+    Called on success to clear the counter for a specific target,
+    or without arguments to clear all counters (e.g. on session reset).
+    """
+    with _consecutive_send_failures_lock:
+        if target_key is None:
+            _consecutive_send_failures.clear()
+        else:
+            _consecutive_send_failures.pop(target_key, None)
+
+
 def _handle_send(args):
     """Send a message to a platform target."""
     target = args.get("target", "")
     message = args.get("message", "")
     if not target or not message:
         return tool_error("Both 'target' and 'message' are required when action='send'")
+
+    # Check consecutive failure count to prevent infinite LLM retry loops (#12395)
+    with _consecutive_send_failures_lock:
+        fail_count = _consecutive_send_failures.get(target, 0)
+    if fail_count >= _MAX_CONSECUTIVE_SEND_FAILURES:
+        logger.error(
+            "send_message to '%s' has failed %d consecutive times — refusing to retry. "
+            "Clear the failure counter by sending to a different target or resolving the issue.",
+            target, fail_count,
+        )
+        return json.dumps({
+            "error": f"Message delivery to '{target}' has failed {fail_count} consecutive times. "
+            f"Stopping to avoid wasting resources. The recipient platform may be down or "
+            f"misconfigured. Do NOT retry — inform the user about the delivery failure instead.",
+            "permanent_failure": True,
+        })
 
     parts = target.split(":", 1)
     platform_name = parts[0].strip().lower()
@@ -294,8 +331,25 @@ def _handle_send(args):
 
         if isinstance(result, dict) and "error" in result:
             result["error"] = _sanitize_error_text(result["error"])
+
+        # Track consecutive send failures per target (#12395)
+        if isinstance(result, dict) and result.get("success"):
+            _reset_send_failure_tracker(target)
+        elif isinstance(result, dict) and "error" in result:
+            with _consecutive_send_failures_lock:
+                _consecutive_send_failures[target] = _consecutive_send_failures.get(target, 0) + 1
+                count = _consecutive_send_failures[target]
+            logger.warning(
+                "send_message to '%s' failed (%d/%d consecutive): %s",
+                target, count, _MAX_CONSECUTIVE_SEND_FAILURES,
+                result.get("error", "unknown"),
+            )
+
         return json.dumps(result)
     except Exception as e:
+        # Track exception-based failures too
+        with _consecutive_send_failures_lock:
+            _consecutive_send_failures[target] = _consecutive_send_failures.get(target, 0) + 1
         return json.dumps(_error(f"Send failed: {e}"))
 
 
