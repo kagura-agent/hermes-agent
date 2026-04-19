@@ -470,6 +470,14 @@ class ShellFileOperations(FileOperations):
                         suffix = path[1 + len(username):]  # e.g. "/rest/of/path"
                         return user_home + suffix
         
+        # Resolve relative paths against TERMINAL_CWD when set.
+        # In worktree (-w) mode, TERMINAL_CWD points to the worktree
+        # while the process cwd is the main repository.
+        if not os.path.isabs(path):
+            terminal_cwd = os.environ.get("TERMINAL_CWD", "").strip()
+            if terminal_cwd:
+                return os.path.join(terminal_cwd, path)
+
         return path
     
     def _escape_shell_arg(self, arg: str) -> str:
