@@ -194,6 +194,33 @@ class TestIncomingDocumentHandling:
         assert event.text.index("[Content of") < event.text.index("summarize this")
 
     @pytest.mark.asyncio
+    async def test_discord_auto_message_txt(self, adapter):
+        """Discord auto-generates message.txt when users paste long text (#12511).
+
+        The attachment should be downloaded, its content injected into event.text,
+        and message.content (usually empty) should not cause issues.
+        """
+        pasted_code = b"def hello():\n    print('world')\n" * 50
+
+        with _mock_aiohttp_download(pasted_code):
+            msg = make_message(
+                attachments=[make_attachment(
+                    filename="message.txt",
+                    content_type="text/plain; charset=utf-8",
+                )],
+                content="",  # Discord leaves content empty
+            )
+            await adapter._handle_message(msg)
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.message_type == MessageType.DOCUMENT
+        assert len(event.media_urls) == 1
+        assert event.media_types == ["text/plain"]
+        # Text content should be injected
+        assert "[Content of message.txt]:" in event.text
+        assert "def hello():" in event.text
+
+    @pytest.mark.asyncio
     async def test_md_content_injected(self, adapter):
         """.md file under 100KB should have its content injected."""
         file_content = b"# Title\nSome markdown content"
