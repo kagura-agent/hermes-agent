@@ -125,9 +125,21 @@ def _make_hermes_provider_class() -> Optional[type]:
                     self._hermes_server_name, exc,
                 )
 
-            # Delegate to the SDK's auth flow
-            async for item in super().async_auth_flow(request):
-                yield item
+            # Delegate to the SDK's auth flow.
+            # We must manually drive the inner async generator so that
+            # response objects sent back via .asend() are forwarded
+            # correctly.  ``async for`` discards sent values, which
+            # causes the inner generator to see ``None`` instead of the
+            # actual httpx Response — leading to the AttributeError on
+            # ``response.status_code`` reported in #12400.
+            flow = super().async_auth_flow(request)
+            response = None  # first __anext__ expects no sent value
+            while True:
+                try:
+                    request = await flow.asend(response)
+                except StopAsyncIteration:
+                    break
+                response = yield request
 
     return HermesMCPOAuthProvider
 

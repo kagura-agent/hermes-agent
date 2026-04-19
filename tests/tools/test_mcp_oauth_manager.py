@@ -124,6 +124,70 @@ async def test_disk_watch_invalidates_on_mtime_change(tmp_path, monkeypatch):
     assert provider._initialized is False
 
 
+@pytest.mark.asyncio
+async def test_async_auth_flow_forwards_response(tmp_path, monkeypatch):
+    """async_auth_flow must forward the response sent back via .asend().
+
+    Regression test for #12400: the old ``async for … yield`` pattern
+    discarded the sent response, so the parent generator received None
+    instead of the httpx Response — causing AttributeError on
+    ``response.status_code``.
+    """
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from tools.mcp_oauth_manager import MCPOAuthManager, reset_manager_for_tests
+
+    reset_manager_for_tests()
+    mgr = MCPOAuthManager()
+    provider = mgr.get_or_build_provider("srv", "https://example.com/mcp", None)
+    assert provider is not None
+
+    # Build a fake request / response pair
+    fake_request = MagicMock(name="request")
+    fake_response = MagicMock(name="response")
+    fake_response.status_code = 401
+
+    # Track what the parent async_auth_flow receives via .asend()
+    received_values = []
+
+    async def mock_parent_flow(self, request):
+        """Mimics httpx Auth's async_auth_flow: yield request, receive response."""
+        response = yield request
+        received_values.append(response)
+        # Yield a second request (e.g. after seeing the 401)
+        second_response = yield request
+        received_values.append(second_response)
+
+    with patch.object(
+        type(provider).__mro__[1],  # OAuthClientProvider
+        "async_auth_flow",
+        mock_parent_flow,
+    ):
+        flow = provider.async_auth_flow(fake_request)
+
+        # First yield: should get the request back
+        req1 = await flow.__anext__()
+        assert req1 is fake_request
+
+        # Send the 401 response back — this MUST reach the parent
+        req2 = await flow.asend(fake_response)
+        assert req2 is fake_request
+
+        # Send another response
+        fake_response_2 = MagicMock(name="response2")
+        fake_response_2.status_code = 200
+        try:
+            await flow.asend(fake_response_2)
+        except StopAsyncIteration:
+            pass
+
+    # The parent generator must have received both real responses, not None
+    assert received_values == [fake_response, fake_response_2], (
+        f"Parent generator received {received_values!r} — expected the actual "
+        f"response objects, not None (which causes the #12400 AttributeError)"
+    )
+
+
 def test_manager_builds_hermes_provider_subclass(tmp_path, monkeypatch):
     """get_or_build_provider returns HermesMCPOAuthProvider, not plain OAuthClientProvider."""
     from tools.mcp_oauth_manager import (
