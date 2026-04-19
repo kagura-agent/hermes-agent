@@ -106,6 +106,13 @@ export function SessionPanel({ info, sid, t }: SessionPanelProps) {
             {info.cwd || process.cwd()}
           </Text>
 
+          {info.terminal_backend && (
+            <Text>
+              <Text color={t.color.sessionLabel}>Terminal: </Text>
+              <Text color={t.color.cornsilk}>{info.terminal_backend}</Text>
+            </Text>
+          )}
+
           {sid && (
             <Text>
               <Text color={t.color.sessionLabel}>Session: </Text>

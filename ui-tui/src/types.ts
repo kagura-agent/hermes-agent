@@ -73,6 +73,7 @@ export interface SessionInfo {
   model: string
   release_date?: string
   skills: Record<string, string[]>
+  terminal_backend?: string
   tools: Record<string, string[]>
   update_behind?: number | null
   update_command?: string

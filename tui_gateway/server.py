@@ -578,6 +578,7 @@ def _session_info(agent) -> dict:
         "update_behind": None,
         "update_command": "",
         "usage": _get_usage(agent),
+        "terminal_backend": _load_cfg().get("terminal", {}).get("backend", "local"),
     }
     try:
         from hermes_cli import __version__, __release_date__
@@ -2760,6 +2761,11 @@ def _(rid, params: dict) -> dict:
                 ["Max Turns", str(cfg.get("max_turns", 25))],
                 ["Toolsets", ", ".join(cfg.get("enabled_toolsets", [])) or "all"],
                 ["Verbose", str(cfg.get("verbose", False))],
+            ]
+        }, {
+            "title": "Terminal",
+            "rows": [
+                ["Backend", cfg.get("terminal", {}).get("backend", "local")],
             ]
         }, {
             "title": "Environment",
