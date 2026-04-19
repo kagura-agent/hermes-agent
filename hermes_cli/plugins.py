@@ -649,11 +649,25 @@ class PluginManager:
         are reused.  All injected context is ephemeral — never
         persisted to session DB.
         """
+        import asyncio
+        import inspect
+
         callbacks = self._hooks.get(hook_name, [])
         results: List[Any] = []
         for cb in callbacks:
             try:
                 ret = cb(**kwargs)
+                if inspect.isawaitable(ret):
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = None
+                    if loop and loop.is_running():
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as pool:
+                            ret = pool.submit(asyncio.run, ret).result()
+                    else:
+                        ret = asyncio.run(ret)
                 if ret is not None:
                     results.append(ret)
             except Exception as exc:

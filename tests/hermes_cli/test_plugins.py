@@ -896,3 +896,77 @@ class TestPluginDispatchTool:
             result = ctx.dispatch_tool("fake", {})
 
         assert '"error"' in result
+
+
+# ── Async dispatch tests ─────────────────────────────────────────────────
+
+
+class TestAsyncPluginCommandDispatch:
+    """Async plugin command handlers and hooks must be awaited."""
+
+    def test_invoke_hook_awaits_async_callback(self):
+        """invoke_hook should await an async callback and collect its result."""
+        async def async_hook(**kwargs):
+            return "async-result"
+
+        mgr = PluginManager()
+        mgr._hooks["on_session_start"] = [async_hook]
+
+        results = mgr.invoke_hook("on_session_start")
+        assert results == ["async-result"]
+
+    def test_invoke_hook_handles_mixed_sync_async(self):
+        """invoke_hook handles a mix of sync and async callbacks."""
+        def sync_hook(**kwargs):
+            return "sync"
+
+        async def async_hook(**kwargs):
+            return "async"
+
+        mgr = PluginManager()
+        mgr._hooks["on_session_start"] = [sync_hook, async_hook]
+
+        results = mgr.invoke_hook("on_session_start")
+        assert results == ["sync", "async"]
+
+    def test_invoke_hook_async_returning_none(self):
+        """Async callbacks returning None are excluded from results."""
+        async def async_hook(**kwargs):
+            return None
+
+        mgr = PluginManager()
+        mgr._hooks["on_session_start"] = [async_hook]
+
+        results = mgr.invoke_hook("on_session_start")
+        assert results == []
+
+    def test_invoke_hook_async_exception_caught(self):
+        """Async callbacks that raise are caught, not propagated."""
+        async def bad_hook(**kwargs):
+            raise ValueError("boom")
+
+        mgr = PluginManager()
+        mgr._hooks["on_session_start"] = [bad_hook]
+
+        results = mgr.invoke_hook("on_session_start")
+        assert results == []
+
+    def test_plugin_command_handler_async(self):
+        """get_plugin_command_handler returns an async handler; caller must await."""
+        async def my_handler(args):
+            return f"got: {args}"
+
+        mgr = PluginManager()
+        mgr._plugin_commands["myasync"] = {
+            "handler": my_handler,
+            "description": "test",
+            "plugin": "test",
+        }
+
+        with patch("hermes_cli.plugins._plugin_manager", mgr):
+            handler = get_plugin_command_handler("myasync")
+            assert handler is my_handler
+
+            import asyncio
+            result = asyncio.run(handler("hello"))
+            assert result == "got: hello"

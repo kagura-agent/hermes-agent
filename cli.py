@@ -5841,7 +5841,11 @@ class HermesCLI:
                 if plugin_handler:
                     user_args = cmd_original[len(base_cmd):].strip()
                     try:
+                        import inspect
                         result = plugin_handler(user_args)
+                        if inspect.isawaitable(result):
+                            import asyncio
+                            result = asyncio.run(result)
                         if result:
                             _cprint(str(result))
                     except Exception as e:
