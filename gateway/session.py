@@ -378,6 +378,10 @@ class SessionEntry:
     # Set by /stop to break stuck-resume loops (#7536).
     suspended: bool = False
 
+    # When set, links this session to the parent session it replaced during
+    # auto-reset.  Used to restore the parent transcript into the new session.
+    parent_session_id: Optional[str] = None
+
     # When True the session was interrupted by a gateway restart/shutdown
     # drain timeout, but recovery is still expected.  Unlike ``suspended``,
     # ``resume_pending`` preserves the existing session_id on next access —
@@ -408,6 +412,7 @@ class SessionEntry:
             "estimated_cost_usd": self.estimated_cost_usd,
             "cost_status": self.cost_status,
             "memory_flushed": self.memory_flushed,
+            "parent_session_id": self.parent_session_id,
             "suspended": self.suspended,
             "resume_pending": self.resume_pending,
             "resume_reason": self.resume_reason,
@@ -460,6 +465,7 @@ class SessionEntry:
             estimated_cost_usd=data.get("estimated_cost_usd", 0.0),
             cost_status=data.get("cost_status", "unknown"),
             memory_flushed=data.get("memory_flushed", False),
+            parent_session_id=data.get("parent_session_id"),
             suspended=data.get("suspended", False),
             resume_pending=data.get("resume_pending", False),
             resume_reason=data.get("resume_reason"),
@@ -790,6 +796,7 @@ class SessionStore:
                 was_auto_reset=was_auto_reset,
                 auto_reset_reason=auto_reset_reason,
                 reset_had_activity=reset_had_activity,
+                parent_session_id=db_end_session_id,
             )
 
             self._entries[session_key] = entry
@@ -798,6 +805,7 @@ class SessionStore:
                 "session_id": session_id,
                 "source": source.platform.value,
                 "user_id": source.user_id,
+                "parent_session_id": db_end_session_id,
             }
 
         # SQLite operations outside the lock

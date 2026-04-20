@@ -3919,12 +3919,22 @@ class GatewayRunner:
         # so the agent knows this is a fresh conversation (not an intentional /reset).
         if getattr(session_entry, 'was_auto_reset', False):
             reset_reason = getattr(session_entry, 'auto_reset_reason', None) or 'idle'
+            _has_parent_context = bool(getattr(session_entry, 'parent_session_id', None))
             if reset_reason == "suspended":
-                context_note = "[System note: The user's previous session was stopped and suspended. This is a fresh conversation with no prior context.]"
+                if _has_parent_context:
+                    context_note = "[System note: The user's previous session was stopped and suspended. Prior conversation context has been restored.]"
+                else:
+                    context_note = "[System note: The user's previous session was stopped and suspended. This is a fresh conversation with no prior context.]"
             elif reset_reason == "daily":
-                context_note = "[System note: The user's session was automatically reset by the daily schedule. This is a fresh conversation with no prior context.]"
+                if _has_parent_context:
+                    context_note = "[System note: The user's session was automatically reset by the daily schedule. Prior conversation context has been restored.]"
+                else:
+                    context_note = "[System note: The user's session was automatically reset by the daily schedule. This is a fresh conversation with no prior context.]"
             else:
-                context_note = "[System note: The user's previous session expired due to inactivity. This is a fresh conversation with no prior context.]"
+                if _has_parent_context:
+                    context_note = "[System note: The user's previous session expired due to inactivity. Prior conversation context has been restored.]"
+                else:
+                    context_note = "[System note: The user's previous session expired due to inactivity. This is a fresh conversation with no prior context.]"
             context_prompt = context_note + "\n\n" + context_prompt
 
             # Send a user-facing notification explaining the reset, unless:
@@ -4017,6 +4027,14 @@ class GatewayRunner:
 
         # Load conversation history from transcript
         history = self.session_store.load_transcript(session_entry.session_id)
+
+        # Restore parent session transcript after auto-reset so the agent
+        # retains prior context, similar to what CLI /resume does.  (#12857)
+        parent_id = getattr(session_entry, 'parent_session_id', None)
+        if parent_id and getattr(session_entry, 'was_auto_reset', False) and not history:
+            parent_history = self.session_store.load_transcript(parent_id)
+            if parent_history:
+                history = list(parent_history)
         
         # -----------------------------------------------------------------
         # Session hygiene: auto-compress pathologically large transcripts
