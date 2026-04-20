@@ -4017,6 +4017,29 @@ class GatewayRunner:
 
         # Load conversation history from transcript
         history = self.session_store.load_transcript(session_entry.session_id)
+
+        # -----------------------------------------------------------------
+        # Auto-reset transcript carry-over (#12857)
+        #
+        # When a session was auto-reset, load the parent session's
+        # transcript so the agent retains prior context — replicating what
+        # the CLI /resume command does.  Without this the user would have
+        # to manually /resume after every idle/daily reset.
+        # -----------------------------------------------------------------
+        if (
+            getattr(session_entry, "was_auto_reset", False)
+            and getattr(session_entry, "parent_session_id", None)
+            and not history  # only if the new session is still empty
+        ):
+            parent_history = self.session_store.load_transcript(
+                session_entry.parent_session_id
+            )
+            if parent_history:
+                # Filter out session_meta entries (same as CLI /resume)
+                parent_history = [
+                    m for m in parent_history if m.get("role") != "session_meta"
+                ]
+                history = parent_history
         
         # -----------------------------------------------------------------
         # Session hygiene: auto-compress pathologically large transcripts

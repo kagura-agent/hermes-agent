@@ -378,6 +378,10 @@ class SessionEntry:
     # Set by /stop to break stuck-resume loops (#7536).
     suspended: bool = False
 
+    # The session_id of the parent session when this session was created
+    # via auto-reset.  Persisted to SQLite so the lineage is queryable.
+    parent_session_id: Optional[str] = None
+
     # When True the session was interrupted by a gateway restart/shutdown
     # drain timeout, but recovery is still expected.  Unlike ``suspended``,
     # ``resume_pending`` preserves the existing session_id on next access —
@@ -790,6 +794,7 @@ class SessionStore:
                 was_auto_reset=was_auto_reset,
                 auto_reset_reason=auto_reset_reason,
                 reset_had_activity=reset_had_activity,
+                parent_session_id=db_end_session_id if was_auto_reset else None,
             )
 
             self._entries[session_key] = entry
@@ -799,6 +804,8 @@ class SessionStore:
                 "source": source.platform.value,
                 "user_id": source.user_id,
             }
+            if was_auto_reset and db_end_session_id:
+                db_create_kwargs["parent_session_id"] = db_end_session_id
 
         # SQLite operations outside the lock
         if self._db and db_end_session_id:
