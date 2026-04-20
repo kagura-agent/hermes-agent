@@ -930,25 +930,42 @@ class APIServerAdapter(BasePlatformAdapter):
 
             # Get usage from completed agent
             usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            agent_error: Exception | None = None
             try:
                 result, agent_usage = await agent_task
                 usage = agent_usage or usage
-            except Exception:
-                pass
+            except Exception as exc:
+                agent_error = exc
 
-            # Finish chunk
-            finish_chunk = {
-                "id": completion_id, "object": "chat.completion.chunk",
-                "created": created, "model": model,
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                "usage": {
-                    "prompt_tokens": usage.get("input_tokens", 0),
-                    "completion_tokens": usage.get("output_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                },
-            }
-            await response.write(f"data: {json.dumps(finish_chunk)}\n\n".encode())
-            await response.write(b"data: [DONE]\n\n")
+            if agent_error is not None:
+                # Agent task crashed — surface an error event instead of
+                # claiming a normal completion so clients can detect the
+                # failure.
+                error_chunk = {
+                    "id": completion_id, "object": "chat.completion.chunk",
+                    "created": created, "model": model,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "error"}],
+                    "error": {
+                        "message": f"Agent task failed: {agent_error}",
+                        "type": "agent_error",
+                    },
+                }
+                await response.write(f"data: {json.dumps(error_chunk)}\n\n".encode())
+                await response.write(b"data: [DONE]\n\n")
+            else:
+                # Finish chunk
+                finish_chunk = {
+                    "id": completion_id, "object": "chat.completion.chunk",
+                    "created": created, "model": model,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                    "usage": {
+                        "prompt_tokens": usage.get("input_tokens", 0),
+                        "completion_tokens": usage.get("output_tokens", 0),
+                        "total_tokens": usage.get("total_tokens", 0),
+                    },
+                }
+                await response.write(f"data: {json.dumps(finish_chunk)}\n\n".encode())
+                await response.write(b"data: [DONE]\n\n")
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
             # Client disconnected mid-stream.  Interrupt the agent so it
             # stops making LLM API calls at the next loop iteration, then
