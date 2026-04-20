@@ -48,15 +48,15 @@ _fake_telegram = types.ModuleType("telegram")
 _fake_telegram.Update = object
 _fake_telegram.Bot = object
 _fake_telegram.Message = object
-_fake_telegram.InlineKeyboardButton = object
-_fake_telegram.InlineKeyboardMarkup = object
+_fake_telegram.InlineKeyboardButton = lambda text, **kw: SimpleNamespace(text=text, **kw)
+_fake_telegram.InlineKeyboardMarkup = lambda rows: SimpleNamespace(inline_keyboard=rows)
 _fake_telegram_error = types.ModuleType("telegram.error")
 _fake_telegram_error.NetworkError = FakeNetworkError
 _fake_telegram_error.BadRequest = FakeBadRequest
 _fake_telegram_error.TimedOut = FakeTimedOut
 _fake_telegram.error = _fake_telegram_error
 _fake_telegram_constants = types.ModuleType("telegram.constants")
-_fake_telegram_constants.ParseMode = SimpleNamespace(MARKDOWN_V2="MarkdownV2")
+_fake_telegram_constants.ParseMode = SimpleNamespace(MARKDOWN_V2="MarkdownV2", MARKDOWN="Markdown")
 _fake_telegram_constants.ChatType = SimpleNamespace(
     GROUP="group",
     SUPERGROUP="supergroup",
@@ -355,3 +355,96 @@ async def test_send_retries_retry_after_errors():
     assert result.success is True
     assert result.message_id == "300"
     assert attempt[0] == 2
+
+
+# ── send_model_picker thread_id tests ────────────────────────────────
+
+
+def _make_picker_adapter():
+    adapter = _make_adapter()
+    adapter._model_picker_state = {}
+    adapter._disable_link_previews = False
+    return adapter
+
+
+_SAMPLE_PROVIDERS = [
+    {"name": "OpenAI", "slug": "openai", "models": ["gpt-4"], "is_current": True},
+    {"name": "Anthropic", "slug": "anthropic", "models": ["claude-3"]},
+]
+
+
+@pytest.mark.asyncio
+async def test_send_model_picker_passes_thread_id():
+    """send_model_picker should use _message_thread_id_for_send for non-General topics."""
+    adapter = _make_picker_adapter()
+    call_log = []
+
+    async def mock_send_message(**kwargs):
+        call_log.append(dict(kwargs))
+        return SimpleNamespace(message_id=77)
+
+    adapter._bot = SimpleNamespace(send_message=mock_send_message)
+
+    result = await adapter.send_model_picker(
+        chat_id="-100123",
+        providers=_SAMPLE_PROVIDERS,
+        current_model="gpt-4",
+        current_provider="openai",
+        session_key="s1",
+        on_model_selected=lambda *a: None,
+        metadata={"thread_id": "42"},
+    )
+
+    assert result.success is True
+    assert call_log[0]["message_thread_id"] == 42
+
+
+@pytest.mark.asyncio
+async def test_send_model_picker_omits_general_topic_thread_id():
+    """send_model_picker should omit message_thread_id for General topic (thread_id='1')."""
+    adapter = _make_picker_adapter()
+    call_log = []
+
+    async def mock_send_message(**kwargs):
+        call_log.append(dict(kwargs))
+        return SimpleNamespace(message_id=78)
+
+    adapter._bot = SimpleNamespace(send_message=mock_send_message)
+
+    result = await adapter.send_model_picker(
+        chat_id="-100123",
+        providers=_SAMPLE_PROVIDERS,
+        current_model="gpt-4",
+        current_provider="openai",
+        session_key="s1",
+        on_model_selected=lambda *a: None,
+        metadata={"thread_id": "1"},
+    )
+
+    assert result.success is True
+    assert call_log[0]["message_thread_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_send_model_picker_no_thread_id():
+    """send_model_picker without thread_id should pass message_thread_id=None."""
+    adapter = _make_picker_adapter()
+    call_log = []
+
+    async def mock_send_message(**kwargs):
+        call_log.append(dict(kwargs))
+        return SimpleNamespace(message_id=79)
+
+    adapter._bot = SimpleNamespace(send_message=mock_send_message)
+
+    result = await adapter.send_model_picker(
+        chat_id="-100123",
+        providers=_SAMPLE_PROVIDERS,
+        current_model="gpt-4",
+        current_provider="openai",
+        session_key="s1",
+        on_model_selected=lambda *a: None,
+    )
+
+    assert result.success is True
+    assert call_log[0]["message_thread_id"] is None
