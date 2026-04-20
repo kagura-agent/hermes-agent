@@ -831,18 +831,39 @@ def read_hermes_oauth_credentials() -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+_BEDROCK_PROFILE_PREFIXES = ("global.", "us.", "eu.", "ap.", "jp.")
+_BEDROCK_PROVIDER_SEGMENTS = (".anthropic.", ".meta.", ".amazon.", ".cohere.")
+
+
+def _is_bedrock_inference_profile(model: str) -> bool:
+    """Return True if *model* looks like a Bedrock inference profile ID.
+
+    Bedrock profiles use dots as namespace separators (e.g.
+    ``global.anthropic.claude-sonnet-4-6``), which must NOT be replaced
+    with hyphens.
+    """
+    lower = model.lower()
+    if any(lower.startswith(p) for p in _BEDROCK_PROFILE_PREFIXES):
+        return True
+    if any(seg in lower for seg in _BEDROCK_PROVIDER_SEGMENTS):
+        return True
+    return False
+
+
 def normalize_model_name(model: str, preserve_dots: bool = False) -> str:
     """Normalize a model name for the Anthropic API.
 
     - Strips 'anthropic/' prefix (OpenRouter format, case-insensitive)
     - Converts dots to hyphens in version numbers (OpenRouter uses dots,
       Anthropic uses hyphens: claude-opus-4.6 → claude-opus-4-6), unless
-      preserve_dots is True (e.g. for Alibaba/DashScope: qwen3.5-plus).
+      preserve_dots is True (e.g. for Alibaba/DashScope: qwen3.5-plus)
+      or the name is a Bedrock inference profile (dots are namespace
+      separators, not version separators).
     """
     lower = model.lower()
     if lower.startswith("anthropic/"):
         model = model[len("anthropic/"):]
-    if not preserve_dots:
+    if not preserve_dots and not _is_bedrock_inference_profile(model):
         # OpenRouter uses dots for version separators (claude-opus-4.6),
         # Anthropic uses hyphens (claude-opus-4-6). Convert dots to hyphens.
         model = model.replace(".", "-")

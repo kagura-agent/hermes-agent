@@ -481,6 +481,19 @@ class TestNormalizeModelName:
         assert normalize_model_name("anthropic/qwen3.5-plus", preserve_dots=True) == "qwen3.5-plus"
         assert normalize_model_name("qwen3.5-flash", preserve_dots=True) == "qwen3.5-flash"
 
+    def test_bedrock_inference_profile_dots_preserved(self):
+        """Bedrock inference profile IDs use dots as namespace separators. Fixes #12727."""
+        assert normalize_model_name("global.anthropic.claude-sonnet-4-6") == "global.anthropic.claude-sonnet-4-6"
+        assert normalize_model_name("us.anthropic.claude-opus-4-6") == "us.anthropic.claude-opus-4-6"
+        assert normalize_model_name("eu.anthropic.claude-sonnet-4-6") == "eu.anthropic.claude-sonnet-4-6"
+        assert normalize_model_name("ap.anthropic.claude-sonnet-4-6") == "ap.anthropic.claude-sonnet-4-6"
+        assert normalize_model_name("jp.amazon.nova-pro-v1") == "jp.amazon.nova-pro-v1"
+
+    def test_openrouter_dots_still_converted(self):
+        """OpenRouter version dots should still be converted to hyphens."""
+        assert normalize_model_name("claude-opus-4.6") == "claude-opus-4-6"
+        assert normalize_model_name("anthropic/claude-sonnet-4.5") == "claude-sonnet-4-5"
+
 
 # ---------------------------------------------------------------------------
 # Tool conversion
