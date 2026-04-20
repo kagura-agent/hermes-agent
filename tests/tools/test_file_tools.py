@@ -293,4 +293,36 @@ class TestSearchHints:
         assert "offset=100" in raw
 
 
+class TestResolvePath:
+    """Tests for _resolve_path: TERMINAL_CWD-aware path resolution."""
+
+    def test_absolute_path_ignores_terminal_cwd(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TERMINAL_CWD", "/some/worktree")
+        from tools.file_tools import _resolve_path
+        result = _resolve_path(str(tmp_path / "file.txt"))
+        assert result == (tmp_path / "file.txt").resolve()
+
+    def test_relative_path_uses_terminal_cwd(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
+        from tools.file_tools import _resolve_path
+        result = _resolve_path("subdir/file.txt")
+        assert result == (tmp_path / "subdir" / "file.txt").resolve()
+
+    def test_relative_path_falls_back_to_cwd(self, monkeypatch):
+        monkeypatch.delenv("TERMINAL_CWD", raising=False)
+        from tools.file_tools import _resolve_path
+        import os
+        from pathlib import Path
+        result = _resolve_path("file.txt")
+        assert result == Path(os.getcwd(), "file.txt").resolve()
+
+    def test_tilde_expanded_before_check(self, monkeypatch):
+        monkeypatch.setenv("TERMINAL_CWD", "/should/not/matter")
+        from tools.file_tools import _resolve_path
+        from pathlib import Path
+        result = _resolve_path("~/somefile")
+        # ~ expands to absolute, so TERMINAL_CWD should not be used
+        assert str(result).startswith(str(Path.home()))
+
+
 
