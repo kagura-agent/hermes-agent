@@ -13,6 +13,8 @@ Each route defines:
   - skills: optional list of skills to load for the agent
   - deliver: where to send the response (github_comment, telegram, etc.)
   - deliver_extra: additional delivery config (repo, pr_number, chat_id)
+  - model: optional model name override for this route's agent runs
+  - provider: optional provider override for this route's agent runs
   - deliver_only: if true, skip the agent — the rendered prompt IS the
     message that gets delivered.  Use for external push notifications
     (Supabase, monitoring alerts, inter-agent pings) where zero LLM cost
@@ -511,6 +513,21 @@ class WebhookAdapter(BasePlatformAdapter):
         self._delivery_info[session_chat_id] = deliver_config
         self._delivery_info_created[session_chat_id] = now
         self._prune_delivery_info(now)
+
+        # Apply per-route model/provider override (mirrors /model session overrides)
+        route_model = route_config.get("model")
+        route_provider = route_config.get("provider")
+        if (route_model or route_provider) and self.gateway_runner:
+            override = {}
+            if route_model:
+                override["model"] = route_model
+            if route_provider:
+                override["provider"] = route_provider
+            self.gateway_runner._session_model_overrides[session_chat_id] = override
+            logger.info(
+                "[webhook] Route %s model/provider override: model=%s provider=%s",
+                route_name, route_model, route_provider,
+            )
 
         # Build source and event
         source = self.build_source(

@@ -758,3 +758,157 @@ class TestDeliverCrossPlatformThreadId:
         mock_target.send.assert_awaited_once_with(
             "12345", "hello", metadata=None
         )
+
+
+# ===================================================================
+# Per-route model/provider override
+# ===================================================================
+
+
+class TestRouteModelOverride:
+    """Tests for per-route model/provider override in _handle_webhook."""
+
+    @pytest.mark.asyncio
+    async def test_route_model_override_sets_session_override(self):
+        """Route with model/provider sets _session_model_overrides on gateway_runner."""
+        routes = {
+            "custom": {
+                "secret": _INSECURE_NO_AUTH,
+                "prompt": "test",
+                "model": "claude-sonnet-4-20250514",
+                "provider": "anthropic",
+            }
+        }
+        adapter = _make_adapter(routes=routes)
+        adapter.handle_message = AsyncMock()
+
+        # Mock gateway_runner with _session_model_overrides dict
+        mock_runner = MagicMock()
+        mock_runner._session_model_overrides = {}
+        adapter.gateway_runner = mock_runner
+
+        app = _create_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            resp = await cli.post(
+                "/webhooks/custom",
+                json={"data": "value"},
+                headers={"X-GitHub-Delivery": "d-override-1"},
+            )
+            assert resp.status == 202
+
+        # Verify the override was set
+        session_key = "webhook:custom:d-override-1"
+        assert session_key in mock_runner._session_model_overrides
+        override = mock_runner._session_model_overrides[session_key]
+        assert override["model"] == "claude-sonnet-4-20250514"
+        assert override["provider"] == "anthropic"
+
+    @pytest.mark.asyncio
+    async def test_route_model_only_override(self):
+        """Route with only model (no provider) sets partial override."""
+        routes = {
+            "model_only": {
+                "secret": _INSECURE_NO_AUTH,
+                "prompt": "test",
+                "model": "gpt-4o",
+            }
+        }
+        adapter = _make_adapter(routes=routes)
+        adapter.handle_message = AsyncMock()
+
+        mock_runner = MagicMock()
+        mock_runner._session_model_overrides = {}
+        adapter.gateway_runner = mock_runner
+
+        app = _create_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            resp = await cli.post(
+                "/webhooks/model_only",
+                json={"x": 1},
+                headers={"X-GitHub-Delivery": "d-model-1"},
+            )
+            assert resp.status == 202
+
+        override = mock_runner._session_model_overrides["webhook:model_only:d-model-1"]
+        assert override["model"] == "gpt-4o"
+        assert "provider" not in override
+
+    @pytest.mark.asyncio
+    async def test_route_provider_only_override(self):
+        """Route with only provider (no model) sets partial override."""
+        routes = {
+            "prov_only": {
+                "secret": _INSECURE_NO_AUTH,
+                "prompt": "test",
+                "provider": "openrouter",
+            }
+        }
+        adapter = _make_adapter(routes=routes)
+        adapter.handle_message = AsyncMock()
+
+        mock_runner = MagicMock()
+        mock_runner._session_model_overrides = {}
+        adapter.gateway_runner = mock_runner
+
+        app = _create_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            resp = await cli.post(
+                "/webhooks/prov_only",
+                json={"x": 1},
+                headers={"X-GitHub-Delivery": "d-prov-1"},
+            )
+            assert resp.status == 202
+
+        override = mock_runner._session_model_overrides["webhook:prov_only:d-prov-1"]
+        assert override["provider"] == "openrouter"
+        assert "model" not in override
+
+    @pytest.mark.asyncio
+    async def test_route_without_override_no_session_override(self):
+        """Route without model/provider does not set session override."""
+        routes = {
+            "plain": {
+                "secret": _INSECURE_NO_AUTH,
+                "prompt": "test",
+            }
+        }
+        adapter = _make_adapter(routes=routes)
+        adapter.handle_message = AsyncMock()
+
+        mock_runner = MagicMock()
+        mock_runner._session_model_overrides = {}
+        adapter.gateway_runner = mock_runner
+
+        app = _create_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            resp = await cli.post(
+                "/webhooks/plain",
+                json={"x": 1},
+                headers={"X-GitHub-Delivery": "d-plain-1"},
+            )
+            assert resp.status == 202
+
+        assert len(mock_runner._session_model_overrides) == 0
+
+    @pytest.mark.asyncio
+    async def test_route_override_without_gateway_runner(self):
+        """Route with model/provider but no gateway_runner does not crash."""
+        routes = {
+            "no_runner": {
+                "secret": _INSECURE_NO_AUTH,
+                "prompt": "test",
+                "model": "test-model",
+            }
+        }
+        adapter = _make_adapter(routes=routes)
+        adapter.handle_message = AsyncMock()
+        adapter.gateway_runner = None  # No runner
+
+        app = _create_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            resp = await cli.post(
+                "/webhooks/no_runner",
+                json={"x": 1},
+                headers={"X-GitHub-Delivery": "d-nr-1"},
+            )
+            assert resp.status == 202  # Should not crash
