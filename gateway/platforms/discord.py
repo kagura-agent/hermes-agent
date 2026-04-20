@@ -2354,7 +2354,7 @@ class DiscordAdapter(BasePlatformAdapter):
             chat_topic=chat_topic,
         )
 
-        msg_type = MessageType.COMMAND if text.startswith("/") else MessageType.TEXT
+        msg_type = MessageType.COMMAND if text.startswith(self.command_prefix) else MessageType.TEXT
         channel_id = str(interaction.channel_id)
         parent_id = str(getattr(getattr(interaction, "channel", None), "parent_id", "") or "")
         return MessageEvent(
@@ -2363,10 +2363,8 @@ class DiscordAdapter(BasePlatformAdapter):
             source=source,
             raw_message=interaction,
             channel_prompt=self._resolve_channel_prompt(channel_id, parent_id or None),
+            command_prefix=self.command_prefix,
         )
-
-    # ------------------------------------------------------------------
-    # Thread creation helpers
     # ------------------------------------------------------------------
 
     async def _handle_thread_create_slash(
@@ -2444,6 +2442,7 @@ class DiscordAdapter(BasePlatformAdapter):
             raw_message=interaction,
             auto_skill=_skills,
             channel_prompt=_channel_prompt,
+            command_prefix=self.command_prefix,
         )
         await self.handle_message(event)
 
@@ -3025,7 +3024,7 @@ class DiscordAdapter(BasePlatformAdapter):
 
         # Determine message type
         msg_type = MessageType.TEXT
-        if message.content.startswith("/"):
+        if message.content.startswith(self.command_prefix):
             msg_type = MessageType.COMMAND
         elif message.attachments:
             # Check attachment types
@@ -3200,6 +3199,7 @@ class DiscordAdapter(BasePlatformAdapter):
             timestamp=message.created_at,
             auto_skill=_skills,
             channel_prompt=_channel_prompt,
+            command_prefix=self.command_prefix,
         )
 
         # Track thread participation so the bot won't require @mention for

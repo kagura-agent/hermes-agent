@@ -1086,7 +1086,7 @@ class SlackAdapter(BasePlatformAdapter):
 
         # Determine message type
         msg_type = MessageType.TEXT
-        if text.startswith("/"):
+        if text.startswith(self.command_prefix):
             msg_type = MessageType.COMMAND
 
         # Handle file attachments
@@ -1201,6 +1201,7 @@ class SlackAdapter(BasePlatformAdapter):
             media_types=media_types,
             reply_to_message_id=thread_ts if thread_ts != ts else None,
             channel_prompt=_channel_prompt,
+            command_prefix=self.command_prefix,
         )
 
         # Only react when bot is directly addressed (DM or @mention).
@@ -1537,9 +1538,10 @@ class SlackAdapter(BasePlatformAdapter):
 
         event = MessageEvent(
             text=text,
-            message_type=MessageType.COMMAND if text.startswith("/") else MessageType.TEXT,
+            message_type=MessageType.COMMAND if text.startswith(self.command_prefix) else MessageType.TEXT,
             source=source,
             raw_message=command,
+            command_prefix=self.command_prefix,
         )
 
         await self.handle_message(event)

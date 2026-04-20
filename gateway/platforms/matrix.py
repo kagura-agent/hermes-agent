@@ -1347,7 +1347,7 @@ class MatrixAdapter(BasePlatformAdapter):
             body = "\n".join(stripped) if stripped else body
 
         msg_type = MessageType.TEXT
-        if body.startswith(("!", "/")):
+        if body.startswith(("!", "/", self.command_prefix)):
             msg_type = MessageType.COMMAND
 
         msg_event = MessageEvent(
@@ -1357,6 +1357,7 @@ class MatrixAdapter(BasePlatformAdapter):
             raw_message=source_content,
             message_id=event_id,
             reply_to_message_id=reply_to,
+            command_prefix=self.command_prefix,
         )
 
         if msg_type == MessageType.TEXT and self._text_batch_delay_seconds > 0:
@@ -1536,6 +1537,7 @@ class MatrixAdapter(BasePlatformAdapter):
             message_id=event_id,
             media_urls=media_urls,
             media_types=media_types,
+            command_prefix=self.command_prefix,
         )
 
         await self.handle_message(msg_event)

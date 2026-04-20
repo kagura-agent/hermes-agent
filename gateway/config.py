@@ -265,6 +265,18 @@ class GatewayConfig:
     # fresh session exactly as if the reset policy had fired.  0 = disabled.
     session_store_max_age_days: int = 90
 
+    # Command prefix: the character(s) that mark a message as a command.
+    # Defaults to "/" but can be changed globally or per-platform to avoid
+    # conflicts with native slash commands (e.g. Matrix, Mattermost).
+    command_prefix: str = "/"
+    platform_command_prefix: Dict[Platform, str] = field(default_factory=dict)
+
+    def get_command_prefix(self, platform: Optional[Platform] = None) -> str:
+        """Return the effective command prefix for a platform."""
+        if platform and platform in self.platform_command_prefix:
+            return self.platform_command_prefix[platform]
+        return self.command_prefix
+
     def get_connected_platforms(self) -> List[Platform]:
         """Return list of platforms that are enabled and configured."""
         connected = []
@@ -427,6 +439,13 @@ class GatewayConfig:
         except (TypeError, ValueError):
             session_store_max_age_days = 90
 
+        platform_command_prefix = {}
+        for pname, prefix in data.get("platform_command_prefix", {}).items():
+            try:
+                platform_command_prefix[Platform(pname)] = str(prefix)
+            except ValueError:
+                pass
+
         return cls(
             platforms=platforms,
             default_reset_policy=default_policy,
@@ -442,6 +461,8 @@ class GatewayConfig:
             unauthorized_dm_behavior=unauthorized_dm_behavior,
             streaming=StreamingConfig.from_dict(data.get("streaming", {})),
             session_store_max_age_days=session_store_max_age_days,
+            command_prefix=data.get("command_prefix", "/"),
+            platform_command_prefix=platform_command_prefix,
         )
 
     def get_unauthorized_dm_behavior(self, platform: Optional[Platform] = None) -> str:
@@ -527,6 +548,19 @@ def load_gateway_config() -> GatewayConfig:
 
             if "always_log_local" in yaml_cfg:
                 gw_data["always_log_local"] = yaml_cfg["always_log_local"]
+
+            # Command prefix configuration — supports a top-level key or
+            # nested under a ``gateway:`` section for clarity.
+            gw_section = yaml_cfg.get("gateway", {})
+            if not isinstance(gw_section, dict):
+                gw_section = {}
+            if "command_prefix" in gw_section:
+                gw_data["command_prefix"] = str(gw_section["command_prefix"])
+            elif "command_prefix" in yaml_cfg:
+                gw_data["command_prefix"] = str(yaml_cfg["command_prefix"])
+            pcp = gw_section.get("platform_command_prefix") or yaml_cfg.get("platform_command_prefix")
+            if isinstance(pcp, dict):
+                gw_data["platform_command_prefix"] = {str(k): str(v) for k, v in pcp.items()}
 
             if "unauthorized_dm_behavior" in yaml_cfg:
                 gw_data["unauthorized_dm_behavior"] = _normalize_unauthorized_dm_behavior(

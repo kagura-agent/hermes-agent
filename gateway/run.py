@@ -1986,6 +1986,7 @@ class GatewayRunner:
                 continue
             
             # Set up message + fatal error handlers
+            adapter.command_prefix = self.config.get_command_prefix(platform)
             adapter.set_message_handler(self._handle_message)
             adapter.set_fatal_error_handler(self._handle_adapter_fatal_error)
             adapter.set_session_store(self.session_store)

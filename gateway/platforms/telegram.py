@@ -2975,6 +2975,7 @@ class TelegramAdapter(BasePlatformAdapter):
             auto_skill=topic_skill,
             channel_prompt=_channel_prompt,
             timestamp=message.date,
+            command_prefix=self.command_prefix,
         )
 
     # ── Message reactions (processing lifecycle) ──────────────────────────

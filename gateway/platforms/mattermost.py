@@ -659,7 +659,7 @@ class MattermostAdapter(BasePlatformAdapter):
         # Determine message type.
         file_ids = post.get("file_ids") or []
         msg_type = MessageType.TEXT
-        if message_text.startswith("/"):
+        if message_text.startswith(self.command_prefix):
             msg_type = MessageType.COMMAND
 
         # Download file attachments immediately (URLs require auth headers
@@ -733,6 +733,7 @@ class MattermostAdapter(BasePlatformAdapter):
             media_urls=media_urls if media_urls else None,
             media_types=media_types if media_types else None,
             channel_prompt=_channel_prompt,
+            command_prefix=self.command_prefix,
         )
 
         await self.handle_message(msg_event)

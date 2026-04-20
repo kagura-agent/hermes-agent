@@ -703,25 +703,30 @@ class MessageEvent:
 
     # Timestamps
     timestamp: datetime = field(default_factory=datetime.now)
-    
+
+    # Command prefix used to detect slash-style commands.
+    # Set by the platform adapter from GatewayConfig.get_command_prefix().
+    command_prefix: str = "/"
+
     def is_command(self) -> bool:
         """Check if this is a command message (e.g., /new, /reset)."""
-        return self.text.startswith("/")
-    
+        return self.text.startswith(self.command_prefix)
+
     def get_command(self) -> Optional[str]:
         """Extract command name if this is a command message."""
         if not self.is_command():
             return None
-        # Split on space and get first word, strip the /
+        # Split on space and get first word, strip the prefix
         parts = self.text.split(maxsplit=1)
-        raw = parts[0][1:].lower() if parts else None
+        prefix_len = len(self.command_prefix)
+        raw = parts[0][prefix_len:].lower() if parts else None
         if raw and "@" in raw:
             raw = raw.split("@", 1)[0]
         # Reject file paths: valid command names never contain /
         if raw and "/" in raw:
             return None
         return raw
-    
+
     def get_command_args(self) -> str:
         """Get the arguments after a command."""
         if not self.is_command():
@@ -865,6 +870,7 @@ class BasePlatformAdapter(ABC):
     def __init__(self, config: PlatformConfig, platform: Platform):
         self.config = config
         self.platform = platform
+        self.command_prefix: str = "/"
         self._message_handler: Optional[MessageHandler] = None
         self._running = False
         self._fatal_error_code: Optional[str] = None
