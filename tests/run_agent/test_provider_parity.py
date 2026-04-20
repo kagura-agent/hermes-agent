@@ -263,6 +263,17 @@ class TestBuildApiKwargsKimiFixedTemperature:
         kwargs = agent._build_api_kwargs(messages)
         assert kwargs["temperature"] == 0.6
 
+    def test_kimi_k2_5_is_thinking_model(self, monkeypatch):
+        agent = _make_agent(
+            monkeypatch,
+            "kimi-coding",
+            base_url="https://api.kimi.com/coding/v1",
+            model="kimi-k2.5",
+        )
+        messages = [{"role": "user", "content": "hi"}]
+        kwargs = agent._build_api_kwargs(messages)
+        assert kwargs["temperature"] == 1.0
+
 
 class TestBuildApiKwargsAIGateway:
     def test_uses_chat_completions_format(self, monkeypatch):
