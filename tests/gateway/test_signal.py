@@ -877,3 +877,102 @@ class TestSignalTypingBackoff:
 
         assert "+155****4567" not in adapter._typing_failures
         assert "+155****4567" not in adapter._typing_skip_until
+
+
+# ---------------------------------------------------------------------------
+# Document attachment message type classification
+# ---------------------------------------------------------------------------
+
+class TestSignalDocumentAttachmentType:
+    """Verify that document attachments are classified as MessageType.DOCUMENT."""
+
+    def _make_envelope(self, content_type, att_id="abc123"):
+        return {
+            "envelope": {
+                "source": "+15559876543",
+                "sourceUuid": "fake-uuid",
+                "sourceName": "Test User",
+                "timestamp": 1700000000000,
+                "dataMessage": {
+                    "message": "check this file",
+                    "timestamp": 1700000000000,
+                    "attachments": [
+                        {"id": att_id, "contentType": content_type, "size": 1024}
+                    ],
+                },
+            }
+        }
+
+    @pytest.mark.asyncio
+    async def test_pdf_attachment_yields_document_type(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter._fetch_attachment = AsyncMock(
+            return_value=("/tmp/doc_abc_test.pdf", ".pdf")
+        )
+
+        dispatched = []
+        adapter.handle_message = AsyncMock(side_effect=lambda e: dispatched.append(e))
+
+        await adapter._handle_envelope(self._make_envelope("application/pdf"))
+
+        assert len(dispatched) == 1
+        from gateway.platforms.base import MessageType
+        assert dispatched[0].message_type == MessageType.DOCUMENT
+        assert dispatched[0].media_urls == ["/tmp/doc_abc_test.pdf"]
+        assert dispatched[0].media_types == ["application/pdf"]
+
+    @pytest.mark.asyncio
+    async def test_text_plain_attachment_yields_document_type(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter._fetch_attachment = AsyncMock(
+            return_value=("/tmp/doc_abc_notes.txt", ".txt")
+        )
+        dispatched = []
+        adapter.handle_message = AsyncMock(side_effect=lambda e: dispatched.append(e))
+
+        await adapter._handle_envelope(self._make_envelope("text/plain"))
+
+        from gateway.platforms.base import MessageType
+        assert dispatched[0].message_type == MessageType.DOCUMENT
+
+    @pytest.mark.asyncio
+    async def test_image_attachment_still_yields_photo_type(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter._fetch_attachment = AsyncMock(
+            return_value=("/tmp/img_abc.png", ".png")
+        )
+        dispatched = []
+        adapter.handle_message = AsyncMock(side_effect=lambda e: dispatched.append(e))
+
+        await adapter._handle_envelope(self._make_envelope("image/png"))
+
+        from gateway.platforms.base import MessageType
+        assert dispatched[0].message_type == MessageType.PHOTO
+
+    @pytest.mark.asyncio
+    async def test_audio_attachment_still_yields_voice_type(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter._fetch_attachment = AsyncMock(
+            return_value=("/tmp/audio_abc.ogg", ".ogg")
+        )
+        dispatched = []
+        adapter.handle_message = AsyncMock(side_effect=lambda e: dispatched.append(e))
+
+        await adapter._handle_envelope(self._make_envelope("audio/ogg"))
+
+        from gateway.platforms.base import MessageType
+        assert dispatched[0].message_type == MessageType.VOICE
+
+    @pytest.mark.asyncio
+    async def test_zip_attachment_yields_document_type(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter._fetch_attachment = AsyncMock(
+            return_value=("/tmp/doc_abc_archive.zip", ".zip")
+        )
+        dispatched = []
+        adapter.handle_message = AsyncMock(side_effect=lambda e: dispatched.append(e))
+
+        await adapter._handle_envelope(self._make_envelope("application/zip"))
+
+        from gateway.platforms.base import MessageType
+        assert dispatched[0].message_type == MessageType.DOCUMENT
