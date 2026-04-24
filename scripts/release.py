@@ -557,6 +557,7 @@ AUTHOR_MAP = {
     "mor.aleksandr@yahoo.com": "MorAlekss",
     "ash@users.noreply.github.com": "ash",
     "andrewho.sf@gmail.com": "andrewhosf",
+    "kagura.agent.ai@gmail.com": "kagura-agent",
 }
 
 
