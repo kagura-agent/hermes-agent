@@ -132,6 +132,7 @@ AUTHOR_MAP = {
     "bloodcarter@gmail.com": "bloodcarter",
     "scott@scotttrinh.com": "scotttrinh",
     "quocanh261997@gmail.com": "quocanh261997",
+    "kagura-agent.ai@gmail.com": "kagura-agent",
     # contributors (from noreply pattern)
     "david.vv@icloud.com": "davidvv",
     "wangqiang@wangqiangdeMac-mini.local": "xiaoqiang243",
@@ -694,8 +695,6 @@ AUTHOR_MAP = {
     # Debug share upload-time redaction (May 2026)
     "dhuysamen@gmail.com": "GodsBoy",  # PR #19318
 }
-
-
 def git(*args, cwd=None):
     """Run a git command and return stdout."""
     result = subprocess.run(
@@ -707,8 +706,6 @@ def git(*args, cwd=None):
         print(f"git {' '.join(args)} failed: {result.stderr}", file=sys.stderr)
         return ""
     return result.stdout.strip()
-
-
 def git_result(*args, cwd=None):
     """Run a git command and return the full CompletedProcess."""
     return subprocess.run(
@@ -717,16 +714,12 @@ def git_result(*args, cwd=None):
         text=True,
         cwd=cwd or str(REPO_ROOT),
     )
-
-
 def get_last_tag():
     """Get the most recent CalVer tag."""
     tags = git("tag", "--list", "v20*", "--sort=-v:refname")
     if tags:
         return tags.split("\n")[0]
     return None
-
-
 def next_available_tag(base_tag: str) -> tuple[str, str]:
     """Return a tag/calver pair, suffixing same-day releases when needed."""
     if not git("tag", "--list", base_tag):
@@ -737,15 +730,11 @@ def next_available_tag(base_tag: str) -> tuple[str, str]:
         suffix += 1
     tag_name = f"{base_tag}.{suffix}"
     return tag_name, tag_name.removeprefix("v")
-
-
 def get_current_version():
     """Read current semver from __init__.py."""
     content = VERSION_FILE.read_text()
     match = re.search(r'__version__\s*=\s*"([^"]+)"', content)
     return match.group(1) if match else "0.0.0"
-
-
 def bump_version(current: str, part: str) -> str:
     """Bump a semver version string."""
     parts = current.split(".")
@@ -766,8 +755,6 @@ def bump_version(current: str, part: str) -> str:
         raise ValueError(f"Unknown bump part: {part}")
 
     return f"{major}.{minor}.{patch}"
-
-
 def update_version_files(semver: str, calver_date: str):
     """Update version strings in source files."""
     # Update __init__.py
@@ -793,8 +780,6 @@ def update_version_files(semver: str, calver_date: str):
         flags=re.MULTILINE,
     )
     PYPROJECT_FILE.write_text(pyproject)
-
-
 def build_release_artifacts(semver: str) -> list[Path]:
     """Build sdist/wheel artifacts for the current release.
 
@@ -828,8 +813,6 @@ def build_release_artifacts(semver: str) -> list[Path]:
         print("  ⚠ Built artifacts did not match the expected release version.")
         return []
     return matching
-
-
 def resolve_author(name: str, email: str) -> str:
     """Resolve a git author to a GitHub @mention."""
     # Try email lookup first
@@ -849,8 +832,6 @@ def resolve_author(name: str, email: str) -> str:
 
     # Fallback to git name
     return name
-
-
 def categorize_commit(subject: str) -> str:
     """Categorize a commit by its conventional commit prefix."""
     subject_lower = subject.lower()
@@ -883,8 +864,6 @@ def categorize_commit(subject: str) -> str:
         return "improvements"
 
     return "other"
-
-
 def clean_subject(subject: str) -> str:
     """Clean up a commit subject for display."""
     # Remove conventional commit prefix
@@ -895,8 +874,6 @@ def clean_subject(subject: str) -> str:
     if cleaned:
         cleaned = cleaned[0].upper() + cleaned[1:]
     return cleaned
-
-
 def parse_coauthors(body: str) -> list:
     """Extract Co-authored-by trailers from a commit message body.
 
@@ -917,8 +894,6 @@ def parse_coauthors(body: str) -> list:
             continue
         results.append({"name": name, "email": email})
     return results
-
-
 def get_commits(since_tag=None):
     """Get commits since a tag (or all commits if None)."""
     if since_tag:
@@ -969,16 +944,12 @@ def get_commits(since_tag=None):
         })
 
     return commits
-
-
 def get_pr_number(subject: str) -> str:
     """Extract PR number from commit subject if present."""
     match = re.search(r"#(\d+)", subject)
     if match:
         return match.group(1)
     return None
-
-
 def generate_changelog(commits, tag_name, semver, repo_url="https://github.com/NousResearch/hermes-agent",
                        prev_tag=None, first_release=False):
     """Generate markdown changelog from categorized commits."""
@@ -1081,8 +1052,6 @@ def generate_changelog(commits, tag_name, semver, repo_url="https://github.com/N
     lines.append("")
 
     return "\n".join(lines)
-
-
 def main():
     parser = argparse.ArgumentParser(description="Hermes Agent Release Tool")
     parser.add_argument("--bump", choices=["major", "minor", "patch"],
@@ -1248,7 +1217,5 @@ def main():
         print(f"  Dry run complete. To publish, add --publish")
         print(f"  Example: python scripts/release.py --bump minor --publish")
         print(f"{'='*60}")
-
-
 if __name__ == "__main__":
     main()
