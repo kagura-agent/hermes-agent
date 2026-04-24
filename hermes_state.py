@@ -1388,9 +1388,10 @@ class SessionDB:
             else:
                 matches = [dict(row) for row in cursor.fetchall()]
 
-        # LIKE fallback for CJK queries: FTS5 default tokenizer splits CJK
-        # characters individually, causing multi-character queries to fail.
-        if not matches and self._contains_cjk(query):
+        # LIKE supplement for CJK queries: FTS5 unicode61 tokenizer drops
+        # many CJK characters, causing partial or empty results. Always run
+        # LIKE for CJK queries and merge with FTS5 results (dedup by id).
+        if self._contains_cjk(query):
             raw_query = query.strip('"').strip()
             like_where = ["m.content LIKE ?"]
             like_params: list = [f"%{raw_query}%"]
@@ -1421,7 +1422,13 @@ class SessionDB:
             like_params = [raw_query] + like_params
             with self._lock:
                 like_cursor = self._conn.execute(like_sql, like_params)
-                matches = [dict(row) for row in like_cursor.fetchall()]
+                like_matches = [dict(row) for row in like_cursor.fetchall()]
+            # Merge: deduplicate by message id, LIKE results supplement FTS5
+            seen_ids = {m["id"] for m in matches}
+            for m in like_matches:
+                if m["id"] not in seen_ids:
+                    matches.append(m)
+                    seen_ids.add(m["id"])
 
         # Add surrounding context (1 message before + after each match).
         # Done outside the lock so we don't hold it across N sequential queries.
