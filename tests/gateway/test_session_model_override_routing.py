@@ -163,3 +163,75 @@ async def test_background_task_prefers_session_override_over_global_runtime(monk
     assert _CapturingAgent.last_init["base_url"] == "https://chatgpt.com/backend-api/codex"
     assert _CapturingAgent.last_init["api_key"] == "***"
     assert _CapturingAgent.last_init["reasoning_config"] == {"enabled": True, "effort": "high"}
+
+
+def _fake_resolve_runtime_provider(*, requested=None, explicit_api_key=None,
+                                     explicit_base_url=None, target_model=None):
+    """Stub that returns different credentials based on the requested provider."""
+    provider = (requested or "").strip().lower()
+    if provider == "custom:provider-a":
+        return {
+            "provider": "custom:provider-a",
+            "api_key": "key-from-provider-a",
+            "base_url": "https://provider-a.example.com/v1",
+            "api_mode": "chat_completions",
+        }
+    if provider == "custom:provider-c":
+        return {
+            "provider": "custom:provider-c",
+            "api_key": "key-from-provider-c",
+            "base_url": "https://provider-c.example.com/v1",
+            "api_mode": "chat_completions",
+        }
+    return {
+        "provider": provider or "auto",
+        "api_key": "fallback-key",
+        "base_url": "https://fallback.example.com/v1",
+        "api_mode": "chat_completions",
+    }
+
+
+def test_session_override_provider_not_clobbered_by_env_var(monkeypatch):
+    """Regression test for #14616: HERMES_INFERENCE_PROVIDER env var must not
+    override a session-level /model provider switch when the override lacks
+    an api_key (falls through to credential resolution).
+    """
+    monkeypatch.setenv("HERMES_INFERENCE_PROVIDER", "custom:provider-a")
+    monkeypatch.setattr(gateway_run, "_load_gateway_config", lambda: {})
+    monkeypatch.setattr(gateway_run, "load_dotenv", lambda *args, **kwargs: None)
+
+    # Patch resolve_runtime_provider so we can track which provider was requested
+    import hermes_cli.runtime_provider as rtp_mod
+    monkeypatch.setattr(rtp_mod, "resolve_runtime_provider",
+                        _fake_resolve_runtime_provider)
+    # Also patch the local import in gateway.run
+    monkeypatch.setattr(
+        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        _fake_resolve_runtime_provider,
+    )
+
+    runner = _make_runner()
+
+    # Session override specifies provider-c but has NO api_key — this is
+    # the fallthrough path where the env var used to win.
+    session_key = "agent:main:local:dm"
+    runner._session_model_overrides[session_key] = {
+        "model": "some-model",
+        "provider": "custom:provider-c",
+        "api_key": None,
+        "base_url": None,
+        "api_mode": None,
+    }
+
+    model, runtime = runner._resolve_session_agent_runtime(
+        session_key=session_key,
+    )
+
+    # The runtime must use provider-c's credentials, NOT provider-a's.
+    assert runtime["provider"] == "custom:provider-c", (
+        f"Expected provider-c but got {runtime['provider']} — "
+        "HERMES_INFERENCE_PROVIDER env var is clobbering session override"
+    )
+    assert runtime["api_key"] == "key-from-provider-c"
+    assert runtime["base_url"] == "https://provider-c.example.com/v1"
+    assert model == "some-model"

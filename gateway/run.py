@@ -589,12 +589,17 @@ logger = logging.getLogger(__name__)
 _AGENT_PENDING_SENTINEL = object()
 
 
-def _resolve_runtime_agent_kwargs() -> dict:
+def _resolve_runtime_agent_kwargs(*, requested_provider: Optional[str] = None) -> dict:
     """Resolve provider credentials for gateway-created AIAgent instances.
 
     If the primary provider fails with an authentication error, attempt to
     resolve credentials using the fallback provider chain from config.yaml
     before giving up.
+
+    When *requested_provider* is supplied (e.g. from a session-level /model
+    override), it takes precedence over the ``HERMES_INFERENCE_PROVIDER``
+    environment variable so that per-session model switches are not silently
+    overridden by a stale shell/.env setting.
     """
     from hermes_cli.runtime_provider import (
         resolve_runtime_provider,
@@ -604,7 +609,7 @@ def _resolve_runtime_agent_kwargs() -> dict:
 
     try:
         runtime = resolve_runtime_provider(
-            requested=os.getenv("HERMES_INFERENCE_PROVIDER"),
+            requested=requested_provider or os.getenv("HERMES_INFERENCE_PROVIDER"),
         )
     except AuthError as auth_exc:
         # Primary provider auth failed (expired token, revoked key, etc.).
@@ -1504,7 +1509,13 @@ class GatewayRunner:
                 list(self._session_model_overrides.keys())[:5] if self._session_model_overrides else "[]",
             )
 
-        runtime_kwargs = _resolve_runtime_agent_kwargs()
+        # When the session override specifies a provider, resolve
+        # credentials for *that* provider so HERMES_INFERENCE_PROVIDER
+        # from the environment does not silently win.  (#14616)
+        _override_provider = override.get("provider") if override else None
+        runtime_kwargs = _resolve_runtime_agent_kwargs(
+            requested_provider=_override_provider or None,
+        )
         if override and resolved_session_key:
             model, runtime_kwargs = self._apply_session_model_override(
                 resolved_session_key, model, runtime_kwargs
