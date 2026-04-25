@@ -95,7 +95,7 @@ async def test_unknown_slash_command_returns_guidance(monkeypatch):
     )
 
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **kwargs: {"api_key": "***"}
     )
 
     result = await runner._handle_message(_make_event("/definitely-not-a-command"))
@@ -121,7 +121,7 @@ async def test_unknown_slash_command_underscored_form_also_guarded(monkeypatch):
     )
 
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **kwargs: {"api_key": "***"}
     )
 
     result = await runner._handle_message(_make_event("/made_up_thing"))
@@ -160,7 +160,7 @@ async def test_underscored_alias_for_hyphenated_builtin_not_flagged(monkeypatch)
     runner._handle_reload_mcp_command = _noop_reload  # type: ignore[attr-defined]
 
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **kwargs: {"api_key": "***"}
     )
 
     result = await runner._handle_message(_make_event("/reload_mcp"))
@@ -191,7 +191,7 @@ async def test_command_hook_can_deny_before_dispatch(monkeypatch):
     )
 
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **kwargs: {"api_key": "***"}
     )
 
     result = await runner._handle_message(_make_event("/status"))
@@ -215,7 +215,7 @@ async def test_command_hook_deny_without_message_uses_default(monkeypatch):
     runner.hooks.emit_collect = AsyncMock(return_value=[{"decision": "deny"}])
 
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **kwargs: {"api_key": "***"}
     )
 
     result = await runner._handle_message(_make_event("/status"))
@@ -238,7 +238,7 @@ async def test_command_hook_can_mark_command_as_handled(monkeypatch):
     )
 
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **kwargs: {"api_key": "***"}
     )
 
     result = await runner._handle_message(_make_event("/status"))
@@ -258,7 +258,7 @@ async def test_command_hook_allow_decision_is_passthrough(monkeypatch):
     )
 
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **kwargs: {"api_key": "***"}
     )
 
     result = await runner._handle_message(_make_event("/status"))
@@ -279,7 +279,7 @@ async def test_command_hook_non_dict_return_values_ignored(monkeypatch):
     )
 
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **kwargs: {"api_key": "***"}
     )
 
     result = await runner._handle_message(_make_event("/status"))
@@ -301,7 +301,7 @@ async def test_command_hook_fires_for_plugin_registered_command(monkeypatch):
     )
 
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **kwargs: {"api_key": "***"}
     )
     # Stub plugin command lookup so is_gateway_known_command() recognizes /metricas.
     from hermes_cli import plugins as _plugins_mod
@@ -350,7 +350,7 @@ async def test_command_hook_rewrite_routes_to_plugin(monkeypatch):
     runner.hooks.emit_collect = AsyncMock(side_effect=_emit_collect)
 
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **kwargs: {"api_key": "***"}
     )
     from hermes_cli import plugins as _plugins_mod
 
