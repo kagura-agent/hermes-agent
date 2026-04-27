@@ -133,6 +133,9 @@ AUTHOR_MAP = {
     "scott@scotttrinh.com": "scotttrinh",
     "quocanh261997@gmail.com": "quocanh261997",
     "kagura-agent.ai@gmail.com": "kagura-agent",
+    "kagura.agent.ai@gmail.com": "kagura-agent",
+
+>>>>>>> 77195f95c (chore: add kagura.agent.ai email to AUTHOR_MAP)
     # contributors (from noreply pattern)
     "david.vv@icloud.com": "davidvv",
     "wangqiang@wangqiangdeMac-mini.local": "xiaoqiang243",
