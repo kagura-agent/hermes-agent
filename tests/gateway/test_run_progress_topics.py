@@ -274,6 +274,13 @@ async def test_run_agent_progress_uses_event_message_id_for_slack_dm(monkeypatch
     fake_run_agent.AIAgent = FakeAgent
     monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
 
+    # Slack platform defaults tool_progress to "off" — override via config so
+    # the progress callback is actually attached to the agent.
+    import yaml
+    (tmp_path / "config.yaml").write_text(
+        yaml.dump({"display": {"tool_progress": "all"}}), encoding="utf-8"
+    )
+
     adapter = ProgressCaptureAdapter(platform=Platform.SLACK)
     runner = _make_runner(adapter)
     gateway_run = importlib.import_module("gateway.run")
