@@ -131,7 +131,7 @@ def test_gateway_run_agent_codex_path_handles_internal_401_refresh(monkeypatch):
     monkeypatch.setattr(
         gateway_run,
         "_resolve_runtime_agent_kwargs",
-        lambda: {
+        lambda **_kw: {
             "provider": "openai-codex",
             "api_mode": "codex_responses",
             "base_url": "https://chatgpt.com/backend-api/codex",

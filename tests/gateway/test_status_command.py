@@ -314,7 +314,7 @@ async def test_first_run_slack_home_channel_onboarding_uses_parent_command(monke
     )
 
     monkeypatch.delenv("SLACK_HOME_CHANNEL", raising=False)
-    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda **_kw: {"api_key": "***"})
     monkeypatch.setattr(
         "agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100000,
@@ -358,7 +358,7 @@ async def test_first_run_non_slack_home_channel_onboarding_keeps_direct_command(
     )
 
     monkeypatch.delenv("TELEGRAM_HOME_CHANNEL", raising=False)
-    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda **_kw: {"api_key": "***"})
     monkeypatch.setattr(
         "agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100000,

@@ -472,7 +472,7 @@ async def test_session_hygiene_warns_user_when_summary_generation_fails(monkeypa
     )
 
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
-    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda **_kw: {"api_key": "***"})
     monkeypatch.setattr(
         "agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100,
@@ -591,7 +591,7 @@ async def test_session_hygiene_informs_user_when_aux_model_fails_but_recovers(mo
     )
 
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
-    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda **_kw: {"api_key": "***"})
     monkeypatch.setattr(
         "agent.model_metadata.get_model_context_length",
         lambda *_args, **_kwargs: 100,
@@ -721,7 +721,7 @@ async def test_session_hygiene_honors_configurable_hard_message_limit(
 
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "fake"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **_kw: {"api_key": "fake"}
     )
     # Pick a context length large enough that the token-based threshold
     # won't trigger for 12 short messages — hard-limit must be the ONLY
@@ -824,7 +824,7 @@ async def test_session_hygiene_default_hard_message_limit_does_not_fire_at_12_me
 
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
     monkeypatch.setattr(
-        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "fake"}
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda **_kw: {"api_key": "fake"}
     )
     monkeypatch.setattr(
         "agent.model_metadata.get_model_context_length",

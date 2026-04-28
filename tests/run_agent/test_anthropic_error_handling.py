@@ -201,7 +201,7 @@ def _run_with_agent(monkeypatch, agent_cls):
     monkeypatch.setattr(
         gateway_run,
         "_resolve_runtime_agent_kwargs",
-        lambda: {
+        lambda **_kw: {
             "provider": "anthropic",
             "api_mode": "anthropic_messages",
             "base_url": "https://api.anthropic.com",
@@ -337,7 +337,7 @@ def test_401_credential_refresh_recovers(monkeypatch):
     monkeypatch.setattr(
         gateway_run,
         "_resolve_runtime_agent_kwargs",
-        lambda: {
+        lambda **_kw: {
             "provider": "anthropic",
             "api_mode": "anthropic_messages",
             "base_url": "https://api.anthropic.com",
@@ -411,7 +411,7 @@ def test_401_refresh_fails_is_non_retryable(monkeypatch):
     monkeypatch.setattr(
         gateway_run,
         "_resolve_runtime_agent_kwargs",
-        lambda: {
+        lambda **_kw: {
             "provider": "anthropic",
             "api_mode": "anthropic_messages",
             "base_url": "https://api.anthropic.com",
@@ -500,7 +500,7 @@ def test_prompt_too_long_triggers_compression(monkeypatch):
     monkeypatch.setattr(
         gateway_run,
         "_resolve_runtime_agent_kwargs",
-        lambda: {
+        lambda **_kw: {
             "provider": "anthropic",
             "api_mode": "anthropic_messages",
             "base_url": "https://api.anthropic.com",

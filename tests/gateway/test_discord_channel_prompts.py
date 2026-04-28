@@ -223,7 +223,7 @@ async def test_run_agent_appends_channel_prompt_to_ephemeral_system_prompt(monke
     monkeypatch.setattr(
         gateway_run,
         "_resolve_runtime_agent_kwargs",
-        lambda: {
+        lambda **_kw: {
             "provider": "openrouter",
             "api_mode": "chat_completions",
             "base_url": "https://openrouter.ai/api/v1",
