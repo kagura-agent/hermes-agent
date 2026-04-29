@@ -36,6 +36,7 @@ import logging
 import os
 import queue
 import threading
+import time
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -58,6 +59,8 @@ _DEFAULT_IDLE_TIMEOUT = 300  # seconds — Hindsight embedded daemon default
 # overwrites prior turns server-side, so we keep the per-process
 # unique document_id fallback for older APIs.
 _MIN_VERSION_FOR_UPDATE_MODE_APPEND = "0.5.0"
+_CIRCUIT_BREAKER_THRESHOLD = 3  # consecutive failures before opening circuit
+_CIRCUIT_BREAKER_COOLDOWN = 60.0  # seconds before half-open retry
 _VALID_BUDGETS = {"low", "mid", "high"}
 _PROVIDER_DEFAULT_MODELS = {
     "openai": "gpt-4o-mini",
@@ -556,6 +559,8 @@ class HindsightMemoryProvider(MemoryProvider):
         # Legacy alias — older tests/callers reference _sync_thread directly.
         # Points at _writer_thread once the writer is running.
         self._sync_thread = None
+        self._circuit_breaker_failures = 0
+        self._circuit_breaker_open_until = 0.0
         self._session_id = ""
         self._parent_session_id = ""
         self._document_id = ""
@@ -914,6 +919,17 @@ class HindsightMemoryProvider(MemoryProvider):
         """Schedule *coro* on the shared loop using the configured timeout."""
         return _run_sync(coro, timeout=self._timeout)
 
+    def _check_circuit_breaker(self):
+        """Fast-fail if the embedded daemon has failed repeatedly."""
+        if self._circuit_breaker_failures >= _CIRCUIT_BREAKER_THRESHOLD:
+            if time.monotonic() < self._circuit_breaker_open_until:
+                raise RuntimeError(
+                    "Hindsight circuit breaker open: embedded daemon failed %d consecutive times; "
+                    "will retry after cooldown" % self._circuit_breaker_failures
+                )
+            # Cooldown elapsed — half-open: allow one attempt
+            self._circuit_breaker_failures = 0
+
     def _is_retriable_embedded_connection_error(self, exc: Exception) -> bool:
         """Return True for stale embedded-daemon connection failures."""
         if self._mode != "local_embedded":
@@ -926,6 +942,8 @@ class HindsightMemoryProvider(MemoryProvider):
                 "connection refused",
                 "connect call failed",
                 "clientconnectorerror",
+                "failed to start daemon",
+                "after it has been closed",
             )
         )
 
@@ -998,20 +1016,32 @@ class HindsightMemoryProvider(MemoryProvider):
 
     def _run_hindsight_operation(self, operation):
         """Run an async Hindsight client operation, retrying once after idle shutdown."""
+        self._check_circuit_breaker()
         client = self._get_client()
         try:
-            return self._run_sync(operation(client))
+            result = self._run_sync(operation(client))
+            self._circuit_breaker_failures = 0
+            return result
         except Exception as exc:
             if not self._is_retriable_embedded_connection_error(exc):
+                self._circuit_breaker_failures += 1
+                self._circuit_breaker_open_until = time.monotonic() + _CIRCUIT_BREAKER_COOLDOWN
                 raise
             logger.info(
                 "Hindsight embedded daemon appears unreachable; recreating client and retrying once: %s",
                 exc,
             )
             self._client = None
-            client = self._get_client()
-            self._client = client
-            return self._run_sync(operation(client))
+            try:
+                client = self._get_client()
+                self._client = client
+                result = self._run_sync(operation(client))
+                self._circuit_breaker_failures = 0
+                return result
+            except Exception:
+                self._circuit_breaker_failures += 1
+                self._circuit_breaker_open_until = time.monotonic() + _CIRCUIT_BREAKER_COOLDOWN
+                raise
 
     def _probe_url(self) -> str:
         """Return the URL to probe /version on.
@@ -1417,6 +1447,10 @@ class HindsightMemoryProvider(MemoryProvider):
         if self._shutting_down.is_set():
             logger.debug("sync_turn: skipped (shutting down)")
             return
+        if (self._circuit_breaker_failures >= _CIRCUIT_BREAKER_THRESHOLD
+                and time.monotonic() < self._circuit_breaker_open_until):
+            logger.debug("sync_turn: skipped (circuit breaker open)")
+            return
 
         if session_id:
             self._session_id = str(session_id).strip()
@@ -1454,6 +1488,7 @@ class HindsightMemoryProvider(MemoryProvider):
         retain_context = self._retain_context
 
         def _do_retain() -> None:
+            self._check_circuit_breaker()
             item = self._build_retain_kwargs(
                 content,
                 context=retain_context,

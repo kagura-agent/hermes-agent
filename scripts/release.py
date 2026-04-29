@@ -172,6 +172,7 @@ AUTHOR_MAP = {
     # Moonshot schema anyOf+enum salvage (May 2026)
     "git@local.invalid": "hendrixfreire",
     "1060770+benjaminsehl@users.noreply.github.com": "benjaminsehl",
+    "kagura.agent.ai@gmail.com": "kagura-agent",
     "nerijusn76@gmail.com": "Nerijusas",
     "itonov@proton.me": "Ito-69",
     "glesstech@gmail.com": "georgeglessner",
