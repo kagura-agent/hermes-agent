@@ -419,6 +419,10 @@ def resolve_billing_route(
         return BillingRoute(provider="anthropic", model=model.split("/")[-1], base_url=base_url or "", billing_mode="official_docs_snapshot")
     if provider_name == "openai":
         return BillingRoute(provider="openai", model=model.split("/")[-1], base_url=base_url or "", billing_mode="official_docs_snapshot")
+    if provider_name in {"gemini", "google", "google-gemini", "google-ai-studio"}:
+        return BillingRoute(provider="google", model=model.split("/")[-1], base_url=base_url or "", billing_mode="official_docs_snapshot")
+    if provider_name == "deepseek" or base_url_host_matches(base_url or "", "api.deepseek.com"):
+        return BillingRoute(provider="deepseek", model=model.split("/")[-1], base_url=base_url or "", billing_mode="official_docs_snapshot")
     if provider_name in {"minimax", "minimax-cn"}:
         return BillingRoute(provider=provider_name, model=model.split("/")[-1], base_url=base_url or "", billing_mode="official_docs_snapshot")
     if provider_name in {"custom", "local"} or (base and "localhost" in base):
@@ -427,7 +431,18 @@ def resolve_billing_route(
 
 
 def _lookup_official_docs_pricing(route: BillingRoute) -> Optional[PricingEntry]:
-    return _OFFICIAL_DOCS_PRICING.get((route.provider, route.model.lower()))
+    key = (route.provider, route.model.lower())
+    entry = _OFFICIAL_DOCS_PRICING.get(key)
+    if entry is not None:
+        return entry
+    # Fallback: match unversioned model aliases (e.g. "claude-sonnet-4"
+    # matches "claude-sonnet-4-20250514").  Only consider entries for the
+    # same provider whose canonical name starts with the requested model.
+    model_lower = route.model.lower()
+    for (p, m), candidate in _OFFICIAL_DOCS_PRICING.items():
+        if p == route.provider and m.startswith(model_lower + "-"):
+            return candidate
+    return None
 
 
 def _openrouter_pricing_entry(route: BillingRoute) -> Optional[PricingEntry]:

@@ -190,3 +190,44 @@ def test_custom_endpoint_models_api_pricing_is_supported(monkeypatch):
 
     assert float(entry.input_cost_per_million) == 0.5
     assert float(entry.output_cost_per_million) == 2.0
+
+
+def test_estimate_usage_cost_gemini_provider_alias():
+    """Provider name 'gemini' (Hermes internal name) should resolve to
+    'google' pricing entries."""
+    result = estimate_usage_cost(
+        "gemini-2.5-pro",
+        CanonicalUsage(input_tokens=1000, output_tokens=500),
+        provider="gemini",
+    )
+
+    assert result.status == "estimated"
+    assert result.amount_usd is not None
+    assert float(result.amount_usd) > 0
+
+
+def test_estimate_usage_cost_anthropic_unversioned_model_alias():
+    """Short model names like 'claude-sonnet-4' should match versioned
+    entries like 'claude-sonnet-4-20250514'."""
+    result = estimate_usage_cost(
+        "claude-sonnet-4",
+        CanonicalUsage(input_tokens=1000, output_tokens=500),
+        provider="anthropic",
+    )
+
+    assert result.status == "estimated"
+    assert result.amount_usd is not None
+    assert float(result.amount_usd) > 0
+
+
+def test_estimate_usage_cost_deepseek_provider_route():
+    """DeepSeek provider should resolve to official_docs_snapshot pricing."""
+    result = estimate_usage_cost(
+        "deepseek-chat",
+        CanonicalUsage(input_tokens=1000, output_tokens=500),
+        provider="deepseek",
+    )
+
+    assert result.status == "estimated"
+    assert result.amount_usd is not None
+    assert float(result.amount_usd) > 0
