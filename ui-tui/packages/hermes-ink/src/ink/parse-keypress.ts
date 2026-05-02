@@ -64,6 +64,7 @@ const XTVERSION_RE = /^\x1bP>\|(.*?)(?:\x07|\x1b\\)$/s
 // eslint-disable-next-line no-control-regex
 const SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/
 const SGR_MOUSE_FRAGMENT_RE = /(?<!\d)(?:\[<|<)?(?:[0-9]|[1-9][0-9]|1\d{2}|2[0-4]\d|25[0-5]);\d+;\d+[Mm]/g
+const CORRUPTED_SGR_FRAGMENT_RE = /^(?!.*\d{4})[0-9;Mm]+$/
 
 function createPasteKey(content: string): ParsedKey {
   return {
@@ -643,6 +644,10 @@ function parseSgrMouseFragment(fragment: string): ParsedInput {
 }
 
 function parseTextWithSgrMouseFragments(text: string): ParsedInput[] | null {
+  if (CORRUPTED_SGR_FRAGMENT_RE.test(text) && /\d[Mm]\d/.test(text)) {
+    return []
+  }
+
   SGR_MOUSE_FRAGMENT_RE.lastIndex = 0
 
   const matches = [...text.matchAll(SGR_MOUSE_FRAGMENT_RE)]

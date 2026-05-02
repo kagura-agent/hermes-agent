@@ -133,4 +133,22 @@ describe('fragmented SGR mouse recovery', () => {
 
     expect(key).toMatchObject({ kind: 'key', sequence: '1234;56;78M9;10;11M' })
   })
+
+  it('silently drops concatenated fragments without prefix', () => {
+    const [events] = parseMultipleKeypresses(INITIAL_STATE, '5;34M34M35;16;35M')
+
+    expect(events).toEqual([])
+  })
+
+  it('silently drops pure corrupted fragment text', () => {
+    const [events] = parseMultipleKeypresses(INITIAL_STATE, '37M37M6;29;37M5;32;37M')
+
+    expect(events).toEqual([])
+  })
+
+  it('does not drop mixed text containing fragment-like patterns', () => {
+    const [[key]] = parseMultipleKeypresses(INITIAL_STATE, 'hello 5;34M world')
+
+    expect(key).toMatchObject({ kind: 'key', sequence: 'hello 5;34M world' })
+  })
 })
