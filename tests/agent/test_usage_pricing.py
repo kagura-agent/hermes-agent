@@ -190,3 +190,56 @@ def test_custom_endpoint_models_api_pricing_is_supported(monkeypatch):
 
     assert float(entry.input_cost_per_million) == 0.5
     assert float(entry.output_cost_per_million) == 2.0
+
+
+def test_bedrock_regional_prefix_us_with_version_suffix():
+    """Bedrock regional IDs with version suffixes like
+    'us.anthropic.claude-haiku-4-5-20251001-v1:0' should resolve via
+    bedrock entries after stripping the region prefix."""
+    entry = get_pricing_entry(
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        provider="bedrock",
+    )
+
+    # After stripping 'us.', model becomes 'anthropic.claude-haiku-4-5-20251001-v1:0'
+    # which matches bedrock entry 'anthropic.claude-haiku-4-5' via prefix fallback.
+    assert entry is not None
+    assert float(entry.input_cost_per_million) == 0.80
+    assert float(entry.output_cost_per_million) == 4.0
+
+
+def test_bedrock_regional_prefix_eu_resolves_to_anthropic_pricing():
+    """Bedrock regional inference-profile IDs like 'eu.anthropic.claude-sonnet-4-6'
+    should resolve to Anthropic pricing after stripping the region prefix."""
+    entry = get_pricing_entry(
+        "eu.anthropic.claude-sonnet-4-6",
+        provider="bedrock",
+    )
+
+    assert entry is not None
+    assert float(entry.input_cost_per_million) == 3.0
+    assert float(entry.output_cost_per_million) == 15.0
+
+
+def test_bedrock_regional_prefix_us_resolves_via_anthropic_fallback():
+    """Bedrock regional IDs with version suffixes like
+    'us.anthropic.claude-sonnet-4-20250514' should resolve via anthropic
+    entries when no bedrock entry matches."""
+    entry = get_pricing_entry(
+        "us.anthropic.claude-sonnet-4-20250514",
+        provider="bedrock",
+    )
+    assert entry is not None
+    assert float(entry.input_cost_per_million) == 3.0
+
+
+def test_bedrock_non_regional_model_still_works():
+    """Non-regional Bedrock model IDs should still resolve normally."""
+    entry = get_pricing_entry(
+        "anthropic.claude-sonnet-4-6",
+        provider="bedrock",
+    )
+
+    assert entry is not None
+    assert float(entry.input_cost_per_million) == 3.0
+    assert float(entry.output_cost_per_million) == 15.0
