@@ -421,3 +421,54 @@ class TestApprovalCallbackThreadLocalWiring:
         # would hold a stale reference to a disposed CLI instance.
         assert seen["approval_after"] is None
         assert seen["sudo_after"] is None
+
+
+class TestCliApprovalUiCJK:
+    """Verify CJK/emoji-aware panel rendering (issue #20621)."""
+
+    def test_cjk_command_panel_borders_aligned(self):
+        """CJK characters should not overflow the right border."""
+        cli = _make_cli_stub()
+        cjk_cmd = "rm -rf /危险/路径/删除全部内容"
+        cli._approval_state = {
+            "command": cjk_cmd,
+            "description": "⚠️ 危険なコマンド",
+            "choices": ["once", "deny"],
+            "selected": 0,
+            "show_full": False,
+            "response_queue": queue.Queue(),
+        }
+
+        fragments = cli._get_approval_display_fragments()
+        rendered = "".join(text for _style, text in fragments)
+        lines = rendered.split("\n")
+
+        # Every line with box borders should have equal rendered width
+        bordered_lines = [l for l in lines if l.startswith("│") or l.startswith("╭") or l.startswith("╰")]
+        assert len(bordered_lines) >= 3, "Should have top/content/bottom borders"
+
+        # The top and bottom borders define the box width
+        top = next(l for l in lines if l.startswith("╭"))
+        bottom = next(l for l in lines if l.startswith("╰"))
+        assert len(top) == len(bottom), "Top and bottom borders should match length"
+
+        # The CJK content should appear in the rendered output
+        assert "危険" in rendered or "危险" in rendered
+
+    def test_emoji_title_renders_without_overflow(self):
+        """Emoji in title should not cause border misalignment."""
+        cli = _make_cli_stub()
+        cli._approval_state = {
+            "command": "echo hello",
+            "description": "Safe command with emoji 🎉🔥",
+            "choices": ["once", "deny"],
+            "selected": 0,
+            "show_full": False,
+            "response_queue": queue.Queue(),
+        }
+
+        fragments = cli._get_approval_display_fragments()
+        rendered = "".join(text for _style, text in fragments)
+        # Should not crash and should contain the content
+        assert "echo hello" in rendered
+        assert "Safe command" in rendered

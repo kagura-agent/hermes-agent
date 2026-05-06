@@ -8943,26 +8943,68 @@ class HermesCLI:
         if not state:
             return []
 
+        try:
+            from prompt_toolkit.utils import get_cwidth as _get_cwidth
+        except Exception:
+            _get_cwidth = len
+
+        def _cwidth(text: str) -> int:
+            """Return the terminal display width of *text* (CJK/emoji aware)."""
+            return _get_cwidth(text or "")
+
+        def _pad_to_width(text: str, target_width: int) -> str:
+            """Right-pad *text* with spaces so it occupies *target_width* columns."""
+            current = _cwidth(text)
+            pad = max(0, target_width - current)
+            return text + " " * pad
+
+        def _wrap_by_width(text: str, width: int) -> list[str]:
+            """Split *text* into lines that fit within *width* terminal columns.
+
+            Falls back to textwrap.wrap when every character is single-width
+            (pure ASCII) so word boundaries are preserved.
+            """
+            if _cwidth(text) == len(text):
+                # Pure single-width text — textwrap handles word-wrap correctly.
+                wrapped = textwrap.wrap(
+                    text,
+                    width=max(8, width),
+                    replace_whitespace=False,
+                    drop_whitespace=False,
+                )
+                return wrapped or [""]
+            # Contains wide characters — wrap by display width.
+            result: list[str] = []
+            line: list[str] = []
+            line_w = 0
+            for ch in text:
+                ch_w = _get_cwidth(ch) if callable(_get_cwidth) else 1
+                if line_w + ch_w > width and line:
+                    result.append("".join(line))
+                    line = []
+                    line_w = 0
+                line.append(ch)
+                line_w += ch_w
+            if line:
+                result.append("".join(line))
+            return result or [""]
+
         def _panel_box_width(title_text: str, content_lines: list[str], min_width: int = 46, max_width: int = 76) -> int:
             term_cols = shutil.get_terminal_size((100, 20)).columns
-            longest = max([len(title_text)] + [len(line) for line in content_lines] + [min_width - 4])
+            longest = max([_cwidth(title_text)] + [_cwidth(line) for line in content_lines] + [min_width - 4])
             inner = min(max(longest + 4, min_width - 2), max_width - 2, max(24, term_cols - 6))
             return inner + 2
 
         def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "") -> list[str]:
-            wrapped = textwrap.wrap(
-                text,
-                width=max(8, width),
-                replace_whitespace=False,
-                drop_whitespace=False,
-                subsequent_indent=subsequent_indent,
-            )
-            return wrapped or [""]
+            raw_lines = _wrap_by_width(text, max(8, width))
+            if subsequent_indent and len(raw_lines) > 1:
+                raw_lines[1:] = [subsequent_indent + l for l in raw_lines[1:]]
+            return raw_lines or [""]
 
         def _append_panel_line(lines, border_style: str, content_style: str, text: str, box_width: int) -> None:
             inner_width = max(0, box_width - 2)
             lines.append((border_style, "│ "))
-            lines.append((content_style, text.ljust(inner_width)))
+            lines.append((content_style, _pad_to_width(text, inner_width)))
             lines.append((border_style, " │\n"))
 
         def _append_blank_panel_line(lines, border_style: str, box_width: int) -> None:
