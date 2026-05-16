@@ -2098,7 +2098,9 @@ def _is_payment_error(exc: Exception) -> bool:
     if status in {402, 429, None}:
         if any(kw in err_lower for kw in ("credits", "insufficient funds",
                                            "can only afford", "billing",
-                                           "payment required")):
+                                           "payment required", "quota",
+                                           "too many tokens", "daily limit",
+                                           "tokens per day")):
             return True
     return False
 
@@ -4522,8 +4524,7 @@ def call_llm(
         # Only try alternative providers when the user didn't explicitly
         # configure this task's provider.  Explicit provider = hard constraint;
         # auto (the default) = best-effort fallback chain.  (#7559)
-        is_auto = resolved_provider in {"auto", "", None}
-        if should_fallback and is_auto:
+        if should_fallback:
             if _is_payment_error(first_err):
                 reason = "payment error"
                 # Resolve the actual provider label (resolved_provider may be
@@ -4851,8 +4852,7 @@ async def async_call_llm(
             or _is_connection_error(first_err)
             or _is_rate_limit_error(first_err)
         )
-        is_auto = resolved_provider in {"auto", "", None}
-        if should_fallback and is_auto:
+        if should_fallback:
             if _is_payment_error(first_err):
                 reason = "payment error"
                 _mark_provider_unhealthy(

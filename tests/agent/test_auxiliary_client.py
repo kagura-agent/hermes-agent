@@ -923,6 +923,25 @@ class TestIsPaymentError:
         exc = Exception("connection reset")
         assert _is_payment_error(exc) is False
 
+    def test_429_with_quota_message(self):
+        exc = Exception("Too many tokens per day: quota exceeded")
+        exc.status_code = 429
+        assert _is_payment_error(exc) is True
+
+    def test_429_with_daily_limit_message(self):
+        exc = Exception("daily limit reached, try again tomorrow")
+        exc.status_code = 429
+        assert _is_payment_error(exc) is True
+
+    def test_429_with_too_many_tokens_message(self):
+        exc = Exception("Too many tokens requested today")
+        exc.status_code = 429
+        assert _is_payment_error(exc) is True
+
+    def test_no_status_quota_exceeded(self):
+        exc = Exception("quota exceeded for this model")
+        assert _is_payment_error(exc) is True
+
 
 class TestIsRateLimitError:
     """_is_rate_limit_error detects 429 rate-limit errors warranting fallback."""
@@ -1109,6 +1128,33 @@ class TestCallLlmPaymentFallback:
                 messages=[{"role": "user", "content": "hello"}],
             )
         # Fallback client should have been used
+        assert fallback_client.chat.completions.create.called
+
+    def test_explicit_provider_gets_fallback_on_payment_error(self, monkeypatch):
+        """Non-auto (explicit) providers should still get fallback on payment/quota errors (#26803)."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+
+        primary_client = MagicMock()
+        quota_err = Exception("Too many tokens per day: quota exceeded")
+        quota_err.status_code = 429
+        primary_client.chat.completions.create.side_effect = quota_err
+
+        fallback_client = MagicMock()
+        fallback_client.chat.completions.create.return_value = MagicMock(choices=[
+            MagicMock(message=MagicMock(content="fallback response"))
+        ])
+
+        with patch("agent.auxiliary_client._get_cached_client",
+                    return_value=(primary_client, "google/gemini-3-flash-preview")), \
+             patch("agent.auxiliary_client._resolve_task_provider_model",
+                    return_value=("openrouter", "google/gemini-3-flash-preview", None, None, None)), \
+             patch("agent.auxiliary_client._try_payment_fallback",
+                    return_value=(fallback_client, "fallback-model", "nous")):
+            result = call_llm(
+                task="compression",
+                messages=[{"role": "user", "content": "hello"}],
+            )
+        # Even with explicit provider "openrouter", fallback should trigger
         assert fallback_client.chat.completions.create.called
 
 # ---------------------------------------------------------------------------
