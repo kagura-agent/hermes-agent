@@ -3202,6 +3202,34 @@ class AIAgent:
         except Exception:
             return False
 
+    def _provider_supports_multimodal_tool_content(self) -> bool:
+        """Return True if the active provider accepts list-type content in tool messages.
+
+        The OpenAI chat-completions spec defines tool message ``content`` as a
+        string.  A handful of first-party providers extend this to accept an
+        array of content parts (text + image_url).  For all other providers we
+        fall back to a plain text summary so the request is not rejected.
+
+        See: https://github.com/NousResearch/hermes-agent/issues/27344
+        """
+        api_mode = getattr(self, "api_mode", "") or ""
+        if api_mode in {
+            "anthropic_messages",  # Anthropic natively converts parts → blocks
+            "codex_responses",     # OpenAI Responses API accepts content parts
+            "gemini_native",       # Gemini native accepts inline_data parts
+        }:
+            return True
+        # chat_completions: only first-party OpenAI endpoints reliably accept
+        # list-type tool content.
+        provider_lower = (getattr(self, "provider", "") or "").lower()
+        if provider_lower in {
+            "openai", "openai-codex", "azure",
+            "anthropic",  # Anthropic-via-OpenAI compat layer
+            "google", "gemini",
+        }:
+            return True
+        return False
+
     def _preprocess_anthropic_content(self, content: Any, role: str) -> Any:
         if not self._content_has_image_parts(content):
             return content
@@ -3340,29 +3368,44 @@ class AIAgent:
         if not self._content_has_image_parts(content):
             return content
 
-        if self._model_supports_vision():
+        if not self._model_supports_vision():
+            summary = _multimodal_text_summary(result)
+            if tool_name == "computer_use":
+                return json.dumps({
+                    "error": (
+                        "computer_use returned screenshot/image content, but the active "
+                        "model/provider does not support image input. Switch to a "
+                        "vision-capable model for desktop computer use, or use browser "
+                        "tools for browser tasks."
+                    ),
+                    "text_summary": summary,
+                })
+
+            logger.warning(
+                "Tool %s returned image content for non-vision model %s/%s; "
+                "falling back to text summary",
+                tool_name,
+                self.provider,
+                self.model,
+            )
+            return summary
+
+        # Vision-capable model, but check if the provider supports multimodal
+        # content in tool messages.  The OpenAI spec defines tool message
+        # ``content`` as a string; only a subset of providers extend it to
+        # accept a content-parts list.  Send the text summary for providers
+        # that are not known to handle list-type tool content.
+        if self._provider_supports_multimodal_tool_content():
             return content
 
-        summary = _multimodal_text_summary(result)
-        if tool_name == "computer_use":
-            return json.dumps({
-                "error": (
-                    "computer_use returned screenshot/image content, but the active "
-                    "model/provider does not support image input. Switch to a "
-                    "vision-capable model for desktop computer use, or use browser "
-                    "tools for browser tasks."
-                ),
-                "text_summary": summary,
-            })
-
-        logger.warning(
-            "Tool %s returned image content for non-vision model %s/%s; "
-            "falling back to text summary",
+        logger.debug(
+            "Tool %s returned multimodal content but provider %s/%s may not "
+            "support list-type tool message content; falling back to text summary",
             tool_name,
             self.provider,
             self.model,
         )
-        return summary
+        return _multimodal_text_summary(result)
 
     def _try_shrink_image_parts_in_messages(self, api_messages: list) -> bool:
         """Forwarder — see ``agent.conversation_compression.try_shrink_image_parts_in_messages``."""
