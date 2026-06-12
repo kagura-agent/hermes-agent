@@ -674,7 +674,7 @@ export function usePromptActions({
         if (!sessionId) {
           dropOptimistic(null)
           releaseBusy()
-          notify({ kind: 'error', title: copy.sessionUnavailable, message: copy.resumeFailed ?? copy.createSessionFailed })
+          notify({ kind: 'error', title: copy.sessionUnavailable, message: copy.createSessionFailed })
 
           return false
         }

@@ -876,6 +876,9 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch):
         def get_session(self, target):
             return {"id": target}
 
+        def resolve_resume_session_id(self, sid):
+            return sid
+
         def reopen_session(self, target):
             captured["reopened"] = target
 
@@ -919,6 +922,61 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch):
     assert captured["history_calls"] == [("tip", False), ("tip", True)]
 
 
+def test_session_resume_resolves_compression_chain(monkeypatch):
+    """session.resume must call resolve_resume_session_id and use the
+    resolved child when it differs from the original target (#44640)."""
+    captured = {}
+    parent_id = "20260612_parent"
+    child_id = "20260612_child"
+
+    class FakeDB:
+        def get_session(self, target):
+            return {"id": target}
+
+        def resolve_resume_session_id(self, sid):
+            captured["resolved_from"] = sid
+            # Simulate compression chain: parent → child
+            return child_id if sid == parent_id else sid
+
+        def reopen_session(self, target):
+            captured["reopened"] = target
+
+        def get_messages_as_conversation(self, target, include_ancestors=False):
+            captured.setdefault("history_calls", []).append((target, include_ancestors))
+            return [{"role": "user", "content": "child prompt"}]
+
+    monkeypatch.setattr(server, "_get_db", lambda: FakeDB())
+    monkeypatch.setattr(server, "_enable_gateway_prompts", lambda: None)
+    monkeypatch.setattr(server, "_set_session_context", lambda target: [])
+    monkeypatch.setattr(server, "_clear_session_context", lambda tokens: None)
+    monkeypatch.setattr(
+        server,
+        "_make_agent",
+        lambda *args, **kwargs: types.SimpleNamespace(model="test"),
+    )
+    monkeypatch.setattr(
+        server,
+        "_session_info",
+        lambda agent, *a: {"model": "test", "tools": {}, "skills": {}},
+    )
+    monkeypatch.setattr(
+        server, "_init_session", lambda sid, key, agent, history, cols=80: None
+    )
+
+    resp = server.handle_request(
+        {"id": "1", "method": "session.resume", "params": {"session_id": parent_id}}
+    )
+
+    assert "error" not in resp, f"Unexpected error: {resp}"
+    # The resolve redirected parent → child
+    assert captured["resolved_from"] == parent_id
+    # All downstream operations should use the resolved child id
+    assert captured["reopened"] == child_id
+    assert all(t == child_id for t, _ in captured["history_calls"]), (
+        f"Expected all history calls on {child_id}, got {captured['history_calls']}"
+    )
+
+
 def test_session_resume_passes_stored_runtime_to_agent(monkeypatch):
     captured = {}
 
@@ -930,6 +988,9 @@ def test_session_resume_passes_stored_runtime_to_agent(monkeypatch):
                 "billing_provider": "openai-codex",
                 "model_config": '{"reasoning_config":{"enabled":true,"effort":"high"},"service_tier":"priority","base_url":"https://custom.example/v1","api_mode":"chat_completions"}',
             }
+
+        def resolve_resume_session_id(self, sid):
+            return sid
 
         def reopen_session(self, target):
             pass

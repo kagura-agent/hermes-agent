@@ -10,7 +10,6 @@ pins the behavior for ``tui_gateway/server.py``.
 
 import ast
 import inspect
-import textwrap
 
 
 def _get_session_resume_source():
@@ -67,12 +66,26 @@ class TestTuiResumeResolvesCompressionChain:
             "so the resolved target is used for loading messages."
         )
 
-    def test_resolve_guards_against_none(self):
-        """The resolve call should guard against None return."""
+    def test_resolve_result_is_checked_before_use(self):
+        """The resolve call result must be checked (truthy + differs) before
+        overwriting target, to handle None / empty returns safely."""
         handler_src = _get_session_resume_source()
 
-        # The guard should check that resolved is truthy before using it
-        assert "resolved and" in handler_src or "if resolved" in handler_src, (
-            "resolve_resume_session_id() result must be guarded against None "
-            "to handle deleted sessions / DB inconsistency."
+        # Verify via AST that the resolved value is used in a conditional,
+        # not assigned directly to target without a guard.
+        tree = ast.parse(handler_src)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.If)
+                and isinstance(node.test, ast.BoolOp)
+                and isinstance(node.test.op, ast.And)
+            ):
+                # Check if any value in the BoolOp references 'resolved'
+                src_segment = ast.get_source_segment(handler_src, node.test)
+                if src_segment and "resolved" in src_segment:
+                    return  # Found a guarded conditional using 'resolved'
+
+        raise AssertionError(
+            "resolve_resume_session_id() result must be guarded with a conditional "
+            "check before overwriting target — to handle None / DB inconsistency."
         )

@@ -4016,6 +4016,10 @@ def _(rid, params: dict) -> dict:
         if limit_message is not None:
             return _err(rid, 4090, limit_message)
         try:
+            # Follow the context-compression chain (see #44640).
+            resolved = db.resolve_resume_session_id(target)
+            if resolved and resolved != target:
+                target = resolved
             db.reopen_session(target)
             # The child's OWN conversation only. Delegation children are
             # parent-linked rows, so include_ancestors would prepend the
